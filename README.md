@@ -2,7 +2,8 @@
 
 > 과거 어느 시점의 계약이든 **그때 그대로 재현**하는, 계약 정보의 원천(Source of Truth)
 
-[![Phase](https://img.shields.io/badge/phase-0%20골격%20완료-brightgreen)]()
+[![Phase](https://img.shields.io/badge/Phase%201-완료-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-297%20passed-brightgreen)]()
 [![Java](https://img.shields.io/badge/Java-21%20LTS-orange)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue)]()
@@ -40,6 +41,68 @@ GET /policies/P2026-0001234/snapshot?asOf=2026-03-14&knownAt=2026-04-02T10:15:00
 ```
 
 **시점 재현성 100%가 이 시스템의 절대 요구사항이다.**
+
+---
+
+## 🎯 기능 요구 사항
+
+구현 전에 기능을 쪼개 적고, 끝난 것만 체크한다. 체크되지 않은 항목은 **아직 동작하지 않는다.**
+
+### Phase 0 — 골격
+
+- [x] Gradle 멀티모듈 (`policy-domain`에 Spring/JPA/Jackson **클래스패스 부재**)
+- [x] `Temporal` — 두 시간축 판정을 순수 함수로 (DB 없이 시점 재현성 검증)
+- [x] ArchUnit 아키텍처 규칙 12종
+- [x] Testcontainers PostgreSQL + Flyway (H2 금지)
+- [x] Transactional Outbox 기반 테이블 · CI
+
+### Phase 1 — 계약 모델 + 스냅샷 API ★
+
+- [x] `Policy` 애그리거트 + `snapshotAsOf(asOf, knownAt)`
+- [x] Bitemporal 스키마 — `EXCLUDE USING gist` 겹침 방지 + 이력 불변 트리거
+- [x] `PolicyJdbcRepository` — INSERT 전용 (`superseded_at` 마킹만 예외)
+- [x] `GET /policies/{no}/snapshot` + 체크섬
+- [x] `GET /policies/{no}` · `/history`
+- [x] `POST /policies/{no}/endorsements` — 변경
+- [x] `POST /policies/{no}/corrections` — 소급 정정 (요청자 ≠ 승인자)
+- [x] Outbox 폴링 릴레이 — **애그리거트 내 순서 보장** + Kafka 발행
+- [x] 테스트 데이터 시드 4건 (`P2026-9000001`~`9000004`)
+- [x] 계약 테스트 — 두 레포가 같은 바이트열에 고정
+- [x] 스냅샷 캐시 — `knownAt` 명시 조회만 (불변인 것만)
+
+### Phase 5 — 청약 + 언더라이팅
+
+- [ ] `Application` 애그리거트 + 고지사항 (`EncryptedText`)
+- [ ] 언더라이팅 룰 엔진 `U-{단계}-{번호}` + 골든 케이스
+- [ ] 부담보·할증 인수 시 동의 기록 강제
+- [ ] 적부조사·건강진단 어댑터 (스텁)
+
+### Phase 6 — 운영 강화
+
+- [ ] 고지사항 조회 시 `audit_log` 기록
+- [ ] 관측성 (메트릭·추적)
+- [ ] 스냅샷 API 부하 테스트 (p99 < 300ms)
+
+---
+
+## 📐 프로그래밍 요구 사항
+
+**스스로 건 제약이다. 지켜지길 바라는 게 아니라, 어기면 빌드가 막히도록 만들었다.**
+
+| 제약 | 강제 장치 |
+|---|---|
+| 도메인에 Spring·JPA·Jackson을 쓰지 않는다 | **클래스패스에 없다** (`policy-domain/build.gradle`) |
+| 이력 테이블의 기존 행을 UPDATE하지 않는다 | DB 트리거가 예외를 던진다 |
+| 유효구간이 겹치지 않는다 | `EXCLUDE USING gist` 제약 |
+| 정정 이력은 수정·삭제할 수 없다 | `BEFORE UPDATE OR DELETE` 트리거 |
+| 정정은 요청자와 승인자가 달라야 한다 | 도메인 + `CHECK` 제약 |
+| `@Transactional` 안에서 외부 발행 금지 | Outbox INSERT만. ArchUnit이 검사 |
+| 금액은 `Money` VO로만 (원 단위 정수) | ArchUnit이 도메인의 `BigDecimal` 금액 필드를 거부 |
+| 테스트에 H2를 쓰지 않는다 | 이 스키마는 H2에서 **생성조차 안 된다** |
+| 비밀값에 기본값을 주지 않는다 | 미설정 시 기동 실패가 정상 |
+| 스냅샷 응답에 민감정보를 넣지 않는다 | 계약 테스트의 **금지 필드 목록** 29개 |
+
+전체 목록: [`CLAUDE.md`](CLAUDE.md) — 절대 규칙 14개
 
 ---
 
@@ -142,6 +205,69 @@ if (uwCase.decision().requiresConsent() && !consent.isValidFor(uwCase)) {
 | 피보험자 식별자(CI), 출생연도 | 모집인·수수료 정보, 보험료 금액 |
 
 주민등록번호는 **저장하지 않는다.** CI 또는 내부 고객키만 쓴다.
+
+---
+
+## 🤔 설계하며 고민한 것
+
+### 왜 JPA 대신 JdbcTemplate으로 이력을 다루나
+
+Hibernate의 더티 체킹은 **영속 상태 엔티티를 자동으로 UPDATE한다.** 이력 테이블에서
+그것은 곧 과거를 바꾸는 일이다. 실수로 필드 하나를 건드리면 시점 재현성이 조용히 깨진다.
+
+`PolicyJdbcRepository`는 INSERT만 한다. 유일한 예외인 `superseded_at` 마킹도
+명시적으로 쓴다. 편의를 포기하고 **"바꿀 수 없다"를 코드 모양으로 만든 것**이다.
+
+### `SKIP LOCKED`만으로는 이벤트 순서가 지켜지지 않는다
+
+Outbox 릴레이를 여러 개 띄우면 `FOR UPDATE SKIP LOCKED`가 중복 발행은 막아준다.
+그런데 **순서는 막아주지 않는다.**
+
+```
+인스턴스 A가 1번(policy.endorsed)을 발행하는 동안
+인스턴스 B가 같은 계약의 2번(policy.corrected)을 먼저 발행할 수 있다
+```
+
+파티션 키를 `policyNo`로 잡아도 소용없다. Kafka는 **보낸 순서**를 지킬 뿐이다.
+뒤집히면 claims가 정정을 먼저 처리해 재심사를 돌리고, 뒤늦게 도착한 변경 이벤트로
+읽기모델을 덮어쓴다.
+
+그래서 쿼리가 **애그리거트당 가장 오래된 미발행 건 하나만** 집는다. 계약당 주기당
+한 건씩 나가지만, 계약 이벤트는 드물어 문제가 되지 않는다.
+
+### 캐시는 "불변인 것만" 한다
+
+`knownAt`이 명시된 과거 조회는 답이 **영원히 같다.** 이력이 append-only라 정정이 나도
+`knownAt < 정정시점`인 질의는 같은 행 집합을 본다. 무효화가 아예 필요 없다.
+
+반면 `knownAt` 없는 "지금" 조회는 정정이 나면 답이 바뀐다. 무효화 로직으로 막을 수도
+있지만, **그 로직이 한 번 새면 claims가 오래된 근거로 심사한다.** 그래서 캐시하지 않는다.
+반복 조회가 잦은 재심사 경로는 어차피 `knownAt`을 명시한다.
+
+### 두 레포에 같은 코드를 의도적으로 중복시켰다
+
+`Money`·`EventId`·`AggregateRoot`·`DomainEvent`는 양쪽 저장소에 똑같이 있다.
+공유 라이브러리로 빼면 두 바운디드 컨텍스트가 **컴파일 타임에 다시 묶인다.**
+한쪽의 필요로 타입이 바뀌면 다른 쪽이 원치 않는 변경을 강제로 받는다.
+
+대신 두 레포가 주고받는 계약(스냅샷 응답, 체크섬 알고리즘)은 **계약 테스트**로 맞춘다.
+결합 없이 안전성만 가져가는 방식이다.
+
+### CI를 켜자 "한 번도 동작한 적 없던" 것들이 나왔다
+
+로컬 빌드가 통과한다고 동작하는 게 아니었다. CI가 처음 돌자:
+
+| 드러난 것 | 왜 안 보였나 |
+|---|---|
+| `gradlew` 스텁이 dash에서 즉시 실패 | 로컬 `/bin/sh`가 bash였다 |
+| `.gitignore`의 `out/`이 `port/out/` 패키지를 삼킴 | 로컬엔 파일이 있었다 |
+| **Outbox 이벤트 직렬화가 전부 실패** | 통합 테스트가 Docker 부재로 skip |
+| `-parameters` 누락으로 **모든 엔드포인트 400** | 웹 테스트가 0건이었다 |
+| `array_length('{}',1)`이 NULL이라 **CHECK 제약이 무력** | 아무도 안 돌려봤다 |
+| 스냅샷 API가 정정 후에도 **버전을 1로 반환** | 시드 테스트가 잡아냈다 |
+
+**"테스트가 통과한다"와 "테스트가 실행됐다"는 다르다.** skip을 성공으로 읽지 않는 것이
+이 프로젝트에서 배운 가장 값비싼 교훈이다.
 
 ---
 
