@@ -62,8 +62,23 @@ public interface Temporal {
     /** 시스템에 기록된 시점. */
     Instant recordedAt();
 
-    /** 이 기록이 정정으로 대체된 시점. {@code null}이면 아직 유효한 기록. */
+    /** 이 기록이 대체된 시점. {@code null}이면 아직 유효한 기록. */
     Instant supersededAt();
+
+    /**
+     * 이 기록을 대체한 연산이 <b>정정</b>이었는가.
+     *
+     * <p>대체에는 두 종류가 있고, 의미가 완전히 다르다.
+     * <ul>
+     *   <li><b>변경(Endorsement)</b>이 구간을 닫으며 대체 — 과거의 사실은 그대로다.
+     *       단지 "이 사실이 언제까지 유효했는지"가 확정된 것뿐이다. {@code false}</li>
+     *   <li><b>정정(Correction)</b>이 대체 — 과거의 사실 자체가 틀렸었다. {@code true}</li>
+     * </ul>
+     *
+     * <p>스냅샷 버전은 <b>정정만</b> 센다. 변경이 버전을 올리면
+     * claims 쪽에서 "과거가 바뀌었다"고 오해한다.
+     */
+    boolean supersededByCorrection();
 
     /**
      * {@code asOf} 시점에 유효했고, {@code knownAt} 시점에 우리가 알고 있던 사실인가.

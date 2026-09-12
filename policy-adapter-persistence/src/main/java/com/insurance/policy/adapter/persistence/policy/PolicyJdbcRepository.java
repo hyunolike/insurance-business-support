@@ -96,40 +96,24 @@ public class PolicyJdbcRepository implements PolicyRepository {
     }
 
     /**
-     * 변경 반영.
+     * 변경 반영 — append-only.
      *
-     * <p>기존 행을 지우고 다시 넣지 않는다 — 이미 저장된 구간은 그대로 두고,
-     * 애그리거트가 만든 <b>새 구간만</b> 골라 INSERT한다.
-     * 구간을 닫는 것(validTo 단축)은 새 행 삽입 전에 기존 행의 종료일만 옮기는 것이므로
-     * 여기서는 겹침 제약을 피하기 위해 닫기 → 삽입 순으로 수행한다.
+     * <p>구간을 닫으려고 {@code valid_to}를 줄이지 않는다. 애그리거트가 만든
+     * <b>대체 마킹과 새 행</b>을 그대로 반영할 뿐이다.
      */
     @Override
     public void applyEndorsement(Policy policy) {
-        syncCoverages(policy);
-        syncVersions(policy);
+        syncTemporals(policy);
     }
 
     @Override
     public void applyStatusChange(Policy policy) {
-        syncVersions(policy);
+        syncTemporals(policy);
     }
 
     @Override
     public void applyCorrection(Policy policy, CorrectionRecord record) {
-        // ★ 이 시스템에서 허용되는 유일한 UPDATE
-        for (Exclusion e : policy.allExclusions()) {
-            if (e.supersededAt() != null) {
-                jdbc.update("""
-                        UPDATE exclusion_version SET superseded_at = ?
-                        WHERE policy_no = ? AND exclusion_id = ? AND superseded_at IS NULL
-                        """,
-                        Timestamp.from(e.supersededAt()),
-                        policy.policyNo().value(),
-                        e.exclusionId().value());
-            }
-        }
-        // 정정으로 추가된 대체 부담보
-        syncExclusions(policy);
+        syncTemporals(policy);
 
         jdbc.update("""
                 INSERT INTO correction_log (policy_no, correction_type, affected_elements,
@@ -151,38 +135,37 @@ public class PolicyJdbcRepository implements PolicyRepository {
                 Timestamp.from(record.correctedAt()));
     }
 
-    /** 애그리거트에 있으나 DB에 없는 담보 구간을 넣는다. 기존 구간의 종료일 변경은 먼저 반영한다. */
-    private void syncCoverages(Policy policy) {
-        for (Coverage c : policy.allCoverages()) {
-            int updated = jdbc.update("""
-                    UPDATE coverage_version SET valid_to = ?
-                    WHERE policy_no = ? AND coverage_code = ? AND valid_from = ?
-                      AND superseded_at IS NULL AND valid_to <> ?
-                    """,
-                    c.validTo(), policy.policyNo().value(), c.coverageCode().value(),
-                    c.validFrom(), c.validTo());
-            if (updated == 0 && !coverageExists(policy.policyNo(), c)) {
-                insertCoverage(policy.policyNo(), c);
-            }
-        }
-    }
+    /**
+     * 애그리거트의 이력 목록을 DB에 반영한다.
+     *
+     * <p>두 가지만 한다:
+     * <ol>
+     *   <li><b>대체 마킹</b> — 애그리거트에서 {@code supersededAt}이 설정됐는데 DB에는
+     *       아직 NULL인 행에 마킹한다. 이 시스템에서 허용되는 유일한 UPDATE다.</li>
+     *   <li><b>새 행 INSERT</b> — DB에 없는 기록을 넣는다.</li>
+     * </ol>
+     *
+     * <p>기존 행의 다른 컬럼은 절대 건드리지 않는다. 트리거가 거부하기도 하지만,
+     * 애초에 시도하지 않는 것이 맞다.
+     *
+     * <p>대체 마킹을 먼저 하는 순서가 중요하다. 새 행을 먼저 넣으면
+     * 아직 유효한 기존 행과 기간이 겹쳐 EXCLUDE 제약에 걸린다.
+     */
+    private void syncTemporals(Policy policy) {
+        supersedeVersions(policy);
+        supersedeCoverages(policy);
+        supersedeExclusions(policy);
 
-    private void syncVersions(Policy policy) {
         for (PolicyVersion v : policy.versions()) {
-            int updated = jdbc.update("""
-                    UPDATE policy_version SET valid_to = ?
-                    WHERE policy_no = ? AND valid_from = ? AND status = ?
-                      AND superseded_at IS NULL AND valid_to <> ?
-                    """,
-                    v.validTo(), policy.policyNo().value(), v.validFrom(),
-                    v.status().name(), v.validTo());
-            if (updated == 0 && !versionExists(policy.policyNo(), v)) {
+            if (v.supersededAt() == null && !versionExists(policy.policyNo(), v)) {
                 insertVersion(policy.policyNo(), v);
             }
         }
-    }
-
-    private void syncExclusions(Policy policy) {
+        for (Coverage c : policy.allCoverages()) {
+            if (c.supersededAt() == null && !coverageExists(policy.policyNo(), c)) {
+                insertCoverage(policy.policyNo(), c);
+            }
+        }
         for (Exclusion e : policy.allExclusions()) {
             if (e.supersededAt() == null && !exclusionExists(policy.policyNo(), e)) {
                 insertExclusion(policy.policyNo(), e);
@@ -190,40 +173,101 @@ public class PolicyJdbcRepository implements PolicyRepository {
         }
     }
 
+    private void supersedeVersions(Policy policy) {
+        for (PolicyVersion v : policy.versions()) {
+            if (v.supersededAt() == null) {
+                continue;
+            }
+            jdbc.update("""
+                    UPDATE policy_version
+                       SET superseded_at = ?, superseded_by_correction = ?
+                     WHERE policy_no = ? AND status = ? AND valid_from = ? AND valid_to = ?
+                       AND superseded_at IS NULL
+                    """,
+                    Timestamp.from(v.supersededAt()), v.supersededByCorrection(),
+                    policy.policyNo().value(), v.status().name(), v.validFrom(), v.validTo());
+        }
+    }
+
+    private void supersedeCoverages(Policy policy) {
+        for (Coverage c : policy.allCoverages()) {
+            if (c.supersededAt() == null) {
+                continue;
+            }
+            jdbc.update("""
+                    UPDATE coverage_version
+                       SET superseded_at = ?, superseded_by_correction = ?
+                     WHERE policy_no = ? AND coverage_code = ?
+                       AND valid_from = ? AND valid_to = ?
+                       AND superseded_at IS NULL
+                    """,
+                    Timestamp.from(c.supersededAt()), c.supersededByCorrection(),
+                    policy.policyNo().value(), c.coverageCode().value(),
+                    c.validFrom(), c.validTo());
+        }
+    }
+
+    private void supersedeExclusions(Policy policy) {
+        for (Exclusion e : policy.allExclusions()) {
+            if (e.supersededAt() == null) {
+                continue;
+            }
+            jdbc.update("""
+                    UPDATE exclusion_version
+                       SET superseded_at = ?, superseded_by_correction = ?
+                     WHERE policy_no = ? AND exclusion_id = ?
+                       AND valid_from = ? AND valid_to = ?
+                       AND superseded_at IS NULL
+                    """,
+                    Timestamp.from(e.supersededAt()), e.supersededByCorrection(),
+                    policy.policyNo().value(), e.exclusionId().value(),
+                    e.validFrom(), e.validTo());
+        }
+    }
+
+    /** 유효기간까지 일치하는 현행 행이 이미 있는가. */
     private boolean coverageExists(PolicyNo policyNo, Coverage c) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM coverage_version
-                WHERE policy_no = ? AND coverage_code = ? AND valid_from = ?
-                """, Integer.class, policyNo.value(), c.coverageCode().value(), c.validFrom());
+                WHERE policy_no = ? AND coverage_code = ?
+                  AND valid_from = ? AND valid_to = ? AND superseded_at IS NULL
+                """, Integer.class, policyNo.value(), c.coverageCode().value(),
+                c.validFrom(), c.validTo());
         return count != null && count > 0;
     }
 
     private boolean versionExists(PolicyNo policyNo, PolicyVersion v) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM policy_version
-                WHERE policy_no = ? AND valid_from = ? AND status = ?
-                """, Integer.class, policyNo.value(), v.validFrom(), v.status().name());
+                WHERE policy_no = ? AND status = ?
+                  AND valid_from = ? AND valid_to = ? AND superseded_at IS NULL
+                """, Integer.class, policyNo.value(), v.status().name(),
+                v.validFrom(), v.validTo());
         return count != null && count > 0;
     }
 
     private boolean exclusionExists(PolicyNo policyNo, Exclusion e) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM exclusion_version
-                WHERE policy_no = ? AND exclusion_id = ? AND valid_from = ?
-                """, Integer.class, policyNo.value(), e.exclusionId().value(), e.validFrom());
+                WHERE policy_no = ? AND exclusion_id = ?
+                  AND valid_from = ? AND valid_to = ? AND superseded_at IS NULL
+                """, Integer.class, policyNo.value(), e.exclusionId().value(),
+                e.validFrom(), e.validTo());
         return count != null && count > 0;
     }
 
     private void insertVersion(PolicyNo policyNo, PolicyVersion v) {
         jdbc.update("""
                 INSERT INTO policy_version (policy_no, status, valid_from, valid_to,
-                                            recorded_at, superseded_at, change_type,
+                                            recorded_at, superseded_at,
+                                            superseded_by_correction, change_type,
                                             reason, actor_ref)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 policyNo.value(), v.status().name(), v.validFrom(), v.validTo(),
                 Timestamp.from(v.recordedAt()),
                 v.supersededAt() == null ? null : Timestamp.from(v.supersededAt()),
+                v.supersededByCorrection(),
                 v.changeType().name(), v.reason(), v.actorRef());
     }
 
@@ -235,8 +279,8 @@ public class PolicyJdbcRepository implements PolicyRepository {
                         coinsurance_rate, min_deductible, min_deductible_by_grade,
                         annual_limit, per_visit_limit, annual_count_limit,
                         waiting_period_end, valid_from, valid_to, recorded_at,
-                        superseded_at, change_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        superseded_at, superseded_by_correction, change_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 policyNo.value(), c.coverageCode().value(), c.name(),
                 c.benefitCategory().name(),
@@ -248,6 +292,7 @@ public class PolicyJdbcRepository implements PolicyRepository {
                 c.waitingPeriodEnd(), c.validFrom(), c.validTo(),
                 Timestamp.from(c.recordedAt()),
                 c.supersededAt() == null ? null : Timestamp.from(c.supersededAt()),
+                c.supersededByCorrection(),
                 c.changeType().name());
     }
 
@@ -255,14 +300,15 @@ public class PolicyJdbcRepository implements PolicyRepository {
         jdbc.update("""
                 INSERT INTO exclusion_version (policy_no, exclusion_id, type, target,
                         kcd_ranges, reason, uw_case_no, valid_from, valid_to,
-                        recorded_at, superseded_at, change_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        recorded_at, superseded_at, superseded_by_correction, change_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 policyNo.value(), e.exclusionId().value(), e.type().name(), e.target(),
                 e.kcdRanges().stream().map(KcdRange::expression).toArray(String[]::new),
                 e.reason(), e.uwCaseNo(), e.validFrom(), e.validTo(),
                 Timestamp.from(e.recordedAt()),
                 e.supersededAt() == null ? null : Timestamp.from(e.supersededAt()),
+                e.supersededByCorrection(),
                 e.changeType().name());
     }
 
@@ -291,9 +337,55 @@ public class PolicyJdbcRepository implements PolicyRepository {
         return count != null && count > 0;
     }
 
+
+    /**
+     * 변경 이력.
+     *
+     * <p>세 이력 테이블을 합쳐 시간순으로 돌려준다. 정정된 기록도 포함한다 —
+     * "언제 무엇이 바뀌었나"가 목적이므로 무효화된 기록을 숨기면 의미가 없다.
+     */
     @Override
-    public Optional<Policy> findCurrent(PolicyNo policyNo) {
-        return load(policyNo, null, null);
+    public List<ChangeHistoryEntry> findChangeHistory(PolicyNo policyNo, String element) {
+        String sql = """
+                SELECT 'STATUS' AS element, change_type, status AS target_ref,
+                       valid_from, valid_to, recorded_at, superseded_at,
+                       status AS detail, reason, actor_ref
+                FROM policy_version WHERE policy_no = :policyNo
+                UNION ALL
+                SELECT 'COVERAGE', change_type, coverage_code,
+                       valid_from, valid_to, recorded_at, superseded_at,
+                       coverage_name, NULL, NULL
+                FROM coverage_version WHERE policy_no = :policyNo
+                UNION ALL
+                SELECT 'EXCLUSION', change_type, exclusion_id,
+                       valid_from, valid_to, recorded_at, superseded_at,
+                       target, reason, uw_case_no
+                FROM exclusion_version WHERE policy_no = :policyNo
+                ORDER BY recorded_at, element, target_ref
+                """.replace(":policyNo", "?");
+
+        List<ChangeHistoryEntry> all = jdbc.query(sql, (rs, i) -> new ChangeHistoryEntry(
+                rs.getString("element"),
+                rs.getString("change_type"),
+                rs.getString("target_ref"),
+                rs.getObject("valid_from", LocalDate.class),
+                rs.getObject("valid_to", LocalDate.class),
+                toInstant(rs, "recorded_at"),
+                toInstant(rs, "superseded_at"),
+                rs.getString("detail"),
+                rs.getString("reason"),
+                rs.getString("actor_ref")),
+                policyNo.value(), policyNo.value(), policyNo.value());
+
+        if (element == null || element.isBlank()) {
+            return all;
+        }
+        return all.stream().filter(e -> e.element().equalsIgnoreCase(element)).toList();
+    }
+
+    @Override
+    public Optional<Policy> load(PolicyNo policyNo) {
+        return loadInternal(policyNo, null, null);
     }
 
     /**
@@ -309,10 +401,10 @@ public class PolicyJdbcRepository implements PolicyRepository {
      */
     @Override
     public Optional<Policy> findAsOf(PolicyNo policyNo, LocalDate asOf, Instant knownAt) {
-        return load(policyNo, asOf, knownAt);
+        return loadInternal(policyNo, asOf, knownAt);
     }
 
-    private Optional<Policy> load(PolicyNo policyNo, LocalDate asOf, Instant knownAt) {
+    private Optional<Policy> loadInternal(PolicyNo policyNo, LocalDate asOf, Instant knownAt) {
         List<PolicyHeader> headers = jdbc.query("""
                 SELECT policy_no, product_code, product_name, generation, holder_ref,
                        insured_ref, insured_birth_year, relation_to_holder,
@@ -357,34 +449,35 @@ public class PolicyJdbcRepository implements PolicyRepository {
             """;
 
     private static final String VERSION_COLUMNS =
-            "status, valid_from, valid_to, recorded_at, superseded_at, change_type, reason, actor_ref";
+            "status, valid_from, valid_to, recorded_at, superseded_at, "
+                    + "superseded_by_correction, change_type, reason, actor_ref";
     private static final String VERSION_ASOF_SQL =
             "SELECT " + VERSION_COLUMNS + " FROM policy_version WHERE policy_no = ?" + ASOF_PREDICATE;
+    /** 쓰기 경로 — 대체된 기록까지 전부 읽는다. 버전 계산과 중복 INSERT 방지에 필요하다. */
     private static final String VERSION_CURRENT_SQL =
-            "SELECT " + VERSION_COLUMNS + " FROM policy_version WHERE policy_no = ?"
-                    + " AND superseded_at IS NULL";
+            "SELECT " + VERSION_COLUMNS + " FROM policy_version WHERE policy_no = ?";
 
     private static final String COVERAGE_COLUMNS = """
             coverage_code, coverage_name, benefit_category, treatment_types, insured_amount,
             coinsurance_rate, min_deductible, min_deductible_by_grade, annual_limit,
             per_visit_limit, annual_count_limit, waiting_period_end,
-            valid_from, valid_to, recorded_at, superseded_at, change_type
+            valid_from, valid_to, recorded_at, superseded_at, superseded_by_correction,
+            change_type
             """;
     private static final String COVERAGE_ASOF_SQL =
             "SELECT " + COVERAGE_COLUMNS + " FROM coverage_version WHERE policy_no = ?" + ASOF_PREDICATE;
     private static final String COVERAGE_CURRENT_SQL =
-            "SELECT " + COVERAGE_COLUMNS + " FROM coverage_version WHERE policy_no = ?"
-                    + " AND superseded_at IS NULL";
+            "SELECT " + COVERAGE_COLUMNS + " FROM coverage_version WHERE policy_no = ?";
 
     private static final String EXCLUSION_COLUMNS = """
             exclusion_id, type, target, kcd_ranges, reason, uw_case_no,
-            valid_from, valid_to, recorded_at, superseded_at, change_type
+            valid_from, valid_to, recorded_at, superseded_at, superseded_by_correction,
+            change_type
             """;
     private static final String EXCLUSION_ASOF_SQL =
             "SELECT " + EXCLUSION_COLUMNS + " FROM exclusion_version WHERE policy_no = ?" + ASOF_PREDICATE;
     private static final String EXCLUSION_CURRENT_SQL =
-            "SELECT " + EXCLUSION_COLUMNS + " FROM exclusion_version WHERE policy_no = ?"
-                    + " AND superseded_at IS NULL";
+            "SELECT " + EXCLUSION_COLUMNS + " FROM exclusion_version WHERE policy_no = ?";
 
     private record PolicyHeader(String policyNo, String productCode, String productName,
                                 String generation, String holderRef, String insuredRef,
@@ -408,6 +501,7 @@ public class PolicyJdbcRepository implements PolicyRepository {
                     rs.getObject("valid_from", LocalDate.class),
                     rs.getObject("valid_to", LocalDate.class),
                     toInstant(rs, "recorded_at"), toInstant(rs, "superseded_at"),
+                    rs.getBoolean("superseded_by_correction"),
                     ChangeType.valueOf(rs.getString("change_type")),
                     rs.getString("reason"), rs.getString("actor_ref"));
 
@@ -429,6 +523,7 @@ public class PolicyJdbcRepository implements PolicyRepository {
                 rs.getObject("valid_from", LocalDate.class),
                 rs.getObject("valid_to", LocalDate.class),
                 toInstant(rs, "recorded_at"), toInstant(rs, "superseded_at"),
+                rs.getBoolean("superseded_by_correction"),
                 ChangeType.valueOf(rs.getString("change_type")));
     }
 
@@ -443,6 +538,7 @@ public class PolicyJdbcRepository implements PolicyRepository {
                     rs.getObject("valid_from", LocalDate.class),
                     rs.getObject("valid_to", LocalDate.class),
                     toInstant(rs, "recorded_at"), toInstant(rs, "superseded_at"),
+                    rs.getBoolean("superseded_by_correction"),
                     ChangeType.valueOf(rs.getString("change_type")));
 
     private Map<InstitutionGrade, Long> readGradeMap(String json) {
@@ -504,13 +600,15 @@ public class PolicyJdbcRepository implements PolicyRepository {
         }
 
         static PolicyVersion of(PolicyStatus status, LocalDate validFrom, LocalDate validTo,
-                                Instant recordedAt, Instant supersededAt, ChangeType changeType,
+                                Instant recordedAt, Instant supersededAt,
+                                boolean supersededByCorrection, ChangeType changeType,
                                 String reason, String actorRef) {
             PolicyVersion base = changeType == ChangeType.CREATE
                     ? PolicyVersion.create(status, validFrom, validTo, recordedAt, actorRef)
                     : PolicyVersion.endorsement(status, validFrom, validTo, recordedAt,
                             reason, actorRef);
-            return supersededAt == null ? base : base.superseded(supersededAt);
+            return supersededAt == null
+                    ? base : base.superseded(supersededAt, supersededByCorrection);
         }
     }
 
@@ -522,13 +620,15 @@ public class PolicyJdbcRepository implements PolicyRepository {
                            java.util.Set<TreatmentType> types, Money insuredAmount,
                            CoverageTerms terms, LocalDate waitingPeriodEnd,
                            LocalDate validFrom, LocalDate validTo, Instant recordedAt,
-                           Instant supersededAt, ChangeType changeType) {
+                           Instant supersededAt, boolean supersededByCorrection,
+                           ChangeType changeType) {
             Coverage base = Coverage.create(code, name, category, types, insuredAmount, terms,
                     waitingPeriodEnd, validFrom, validTo, recordedAt);
             if (changeType == ChangeType.ENDORSEMENT) {
                 base = base.withTerms(terms, insuredAmount, validFrom, validTo, recordedAt);
             }
-            return supersededAt == null ? base : base.superseded(supersededAt);
+            return supersededAt == null
+                    ? base : base.superseded(supersededAt, supersededByCorrection);
         }
     }
 
@@ -539,10 +639,12 @@ public class PolicyJdbcRepository implements PolicyRepository {
         static Exclusion of(ExclusionId id, ExclusionType type, String target,
                             List<KcdRange> ranges, String reason, String uwCaseNo,
                             LocalDate validFrom, LocalDate validTo, Instant recordedAt,
-                            Instant supersededAt, ChangeType changeType) {
+                            Instant supersededAt, boolean supersededByCorrection,
+                            ChangeType changeType) {
             Exclusion base = Exclusion.create(id, type, target, ranges, reason, uwCaseNo,
                     validFrom, validTo, recordedAt);
-            return supersededAt == null ? base : base.superseded(supersededAt);
+            return supersededAt == null
+                    ? base : base.superseded(supersededAt, supersededByCorrection);
         }
     }
 }

@@ -33,12 +33,14 @@ public final class Coverage implements Temporal {
     private final LocalDate validTo;
     private final Instant recordedAt;
     private final Instant supersededAt;
+    private final boolean supersededByCorrection;
     private final ChangeType changeType;
 
     private Coverage(CoverageCode coverageCode, String name, BenefitCategory benefitCategory,
                      Set<TreatmentType> treatmentTypes, Money insuredAmount, CoverageTerms terms,
                      LocalDate waitingPeriodEnd, LocalDate validFrom, LocalDate validTo,
-                     Instant recordedAt, Instant supersededAt, ChangeType changeType) {
+                     Instant recordedAt, Instant supersededAt, boolean supersededByCorrection,
+                     ChangeType changeType) {
         this.coverageCode = Objects.requireNonNull(coverageCode, "담보코드는 필수입니다.");
         this.name = Objects.requireNonNull(name, "담보명은 필수입니다.");
         this.benefitCategory = Objects.requireNonNull(benefitCategory, "보장구분은 필수입니다.");
@@ -58,6 +60,7 @@ public final class Coverage implements Temporal {
         }
         this.recordedAt = Objects.requireNonNull(recordedAt, "기록시각은 필수입니다.");
         this.supersededAt = supersededAt;
+        this.supersededByCorrection = supersededByCorrection;
         this.changeType = Objects.requireNonNull(changeType, "변경유형은 필수입니다.");
     }
 
@@ -67,40 +70,59 @@ public final class Coverage implements Temporal {
                                   CoverageTerms terms, LocalDate waitingPeriodEnd,
                                   LocalDate validFrom, LocalDate validTo, Instant recordedAt) {
         return new Coverage(coverageCode, name, benefitCategory, treatmentTypes, insuredAmount,
-                terms, waitingPeriodEnd, validFrom, validTo, recordedAt, null, ChangeType.CREATE);
+                terms, waitingPeriodEnd, validFrom, validTo, recordedAt, null, false,
+                ChangeType.CREATE);
     }
 
-    /** 변경(Endorsement): 이 구간을 {@code at}에서 닫은 새 인스턴스를 만든다. */
-    public Coverage endingAt(LocalDate at) {
+    /**
+     * 변경(Endorsement)으로 닫힌 구간을 <b>새 기록으로</b> 만든다.
+     *
+     * <p>기존 행의 {@code validTo}를 줄이지 않는다. 줄이면 시점 재현성이 깨진다 —
+     * 변경 이전 {@code knownAt}으로 미래 날짜를 조회했을 때, 축소된 구간은 그 날짜를
+     * 덮지 않고 새 구간은 아직 기록되지 않아 <b>아무것도 반환되지 않는다.</b>
+     * 같은 {@code (asOf, knownAt)}이 다른 답을 주면 이 시스템은 의미가 없다.
+     *
+     * <p>대신 기존 기록을 {@link #superseded}로 무효화하고, 닫힌 구간을 새로 기록한다.
+     */
+    public Coverage closedAt(LocalDate at, Instant recordedAt) {
         if (!at.isAfter(validFrom)) {
             throw new IllegalArgumentException(
                     "구간 종료일은 시작일보다 뒤여야 합니다: %s → %s".formatted(validFrom, at));
         }
         return new Coverage(coverageCode, name, benefitCategory, treatmentTypes, insuredAmount,
-                terms, waitingPeriodEnd, validFrom, at, recordedAt, supersededAt, changeType);
+                terms, waitingPeriodEnd, validFrom, at, recordedAt, null, false,
+                ChangeType.ENDORSEMENT);
     }
 
-    /** 정정(Correction): 이 기록을 {@code at} 시점부로 무효화한 새 인스턴스를 만든다. */
-    public Coverage superseded(Instant at) {
+    /**
+     * 이 기록을 {@code at} 시점부로 무효화한 새 인스턴스를 만든다.
+     *
+     * @param byCorrection 정정으로 무효화하면 {@code true}(과거 사실이 틀렸었다),
+     *                     변경이 구간을 닫으며 무효화하면 {@code false}(사실은 그대로다).
+     *                     스냅샷 버전은 정정만 센다.
+     */
+    public Coverage superseded(Instant at, boolean byCorrection) {
         if (supersededAt != null) {
-            throw new IllegalStateException("이미 정정된 기록입니다: " + coverageCode);
+            throw new IllegalStateException("이미 대체된 기록입니다: " + coverageCode);
         }
         return new Coverage(coverageCode, name, benefitCategory, treatmentTypes, insuredAmount,
-                terms, waitingPeriodEnd, validFrom, validTo, recordedAt, at, changeType);
+                terms, waitingPeriodEnd, validFrom, validTo, recordedAt, at, byCorrection,
+                changeType);
     }
 
     /** 변경으로 이어지는 후속 구간. */
     public Coverage withTerms(CoverageTerms newTerms, Money newInsuredAmount,
                               LocalDate from, LocalDate to, Instant recordedAt) {
         return new Coverage(coverageCode, name, benefitCategory, treatmentTypes, newInsuredAmount,
-                newTerms, waitingPeriodEnd, from, to, recordedAt, null, ChangeType.ENDORSEMENT);
+                newTerms, waitingPeriodEnd, from, to, recordedAt, null, false,
+                ChangeType.ENDORSEMENT);
     }
 
     /** 부활 시 면책기간 재기산. */
     public Coverage withWaitingPeriodEnd(LocalDate newEnd, LocalDate from, LocalDate to,
                                          Instant recordedAt) {
         return new Coverage(coverageCode, name, benefitCategory, treatmentTypes, insuredAmount,
-                terms, newEnd, from, to, recordedAt, null, ChangeType.ENDORSEMENT);
+                terms, newEnd, from, to, recordedAt, null, false, ChangeType.ENDORSEMENT);
     }
 
     public boolean appliesTo(TreatmentType type) {
@@ -162,6 +184,11 @@ public final class Coverage implements Temporal {
     @Override
     public Instant supersededAt() {
         return supersededAt;
+    }
+
+    @Override
+    public boolean supersededByCorrection() {
+        return supersededByCorrection;
     }
 
     @Override

@@ -33,12 +33,14 @@ public final class Exclusion implements Temporal {
     private final LocalDate validTo;
     private final Instant recordedAt;
     private final Instant supersededAt;
+    private final boolean supersededByCorrection;
     private final ChangeType changeType;
 
     private Exclusion(ExclusionId exclusionId, ExclusionType type, String target,
                       List<KcdRange> kcdRanges, String reason, String uwCaseNo,
                       LocalDate validFrom, LocalDate validTo, Instant recordedAt,
-                      Instant supersededAt, ChangeType changeType) {
+                      Instant supersededAt, boolean supersededByCorrection,
+                      ChangeType changeType) {
         this.exclusionId = Objects.requireNonNull(exclusionId, "부담보 식별자는 필수입니다.");
         this.type = Objects.requireNonNull(type, "부담보 유형은 필수입니다.");
         this.target = Objects.requireNonNull(target, "부담보 대상은 필수입니다.");
@@ -58,6 +60,7 @@ public final class Exclusion implements Temporal {
         }
         this.recordedAt = Objects.requireNonNull(recordedAt, "기록시각은 필수입니다.");
         this.supersededAt = supersededAt;
+        this.supersededByCorrection = supersededByCorrection;
         this.changeType = Objects.requireNonNull(changeType, "변경유형은 필수입니다.");
     }
 
@@ -65,16 +68,20 @@ public final class Exclusion implements Temporal {
                                    List<KcdRange> kcdRanges, String reason, String uwCaseNo,
                                    LocalDate validFrom, LocalDate validTo, Instant recordedAt) {
         return new Exclusion(exclusionId, type, target, kcdRanges, reason, uwCaseNo,
-                validFrom, validTo, recordedAt, null, ChangeType.CREATE);
+                validFrom, validTo, recordedAt, null, false, ChangeType.CREATE);
     }
 
-    /** 정정(Correction): 이 기록을 {@code at} 시점부로 무효화한 새 인스턴스를 만든다. */
-    public Exclusion superseded(Instant at) {
+    /**
+     * 이 기록을 {@code at} 시점부로 무효화한 새 인스턴스를 만든다.
+     *
+     * @param byCorrection 정정이면 {@code true}. 스냅샷 버전은 정정만 센다.
+     */
+    public Exclusion superseded(Instant at, boolean byCorrection) {
         if (supersededAt != null) {
-            throw new IllegalStateException("이미 정정된 부담보입니다: " + exclusionId);
+            throw new IllegalStateException("이미 대체된 부담보입니다: " + exclusionId);
         }
         return new Exclusion(exclusionId, type, target, kcdRanges, reason, uwCaseNo,
-                validFrom, validTo, recordedAt, at, changeType);
+                validFrom, validTo, recordedAt, at, byCorrection, changeType);
     }
 
     /**
@@ -134,6 +141,11 @@ public final class Exclusion implements Temporal {
     @Override
     public Instant supersededAt() {
         return supersededAt;
+    }
+
+    @Override
+    public boolean supersededByCorrection() {
+        return supersededByCorrection;
     }
 
     @Override

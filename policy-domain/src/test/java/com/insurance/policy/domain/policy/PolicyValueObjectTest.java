@@ -343,24 +343,51 @@ class PolicyValueObjectTest {
         @DisplayName("구간 종료일은 시작일보다 뒤여야 한다")
         void shouldRejectInvalidEnding() {
             var coverage = PolicyFixtures.급여입원담보();
-            assertThatThrownBy(() -> coverage.endingAt(FROM))
+            assertThatThrownBy(() -> coverage.closedAt(FROM, NOW))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
-        @DisplayName("이미 정정된 기록은 다시 정정할 수 없다")
+        @DisplayName("닫힌 구간은 새 기록이다 — 기존 기록을 수정하지 않는다")
+        void closedIntervalIsANewRecord() {
+            var original = PolicyFixtures.급여입원담보();
+            var closed = original.closedAt(LocalDate.of(2026, 6, 1), NOW);
+
+            assertThat(original.validTo())
+                    .as("원본은 그대로다. 줄이면 시점 재현성이 깨진다")
+                    .isEqualTo(PolicyFixtures.만기일);
+            assertThat(closed.validTo()).isEqualTo(LocalDate.of(2026, 6, 1));
+            assertThat(closed.changeType()).isEqualTo(ChangeType.ENDORSEMENT);
+            assertThat(closed.supersededAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("대체 사유를 구분한다 — 정정만 스냅샷 버전을 올린다")
+        void shouldDistinguishSupersessionReason() {
+            var byCorrection = PolicyFixtures.척추부담보조건().superseded(NOW, true);
+            var byEndorsement = PolicyFixtures.급여입원담보().superseded(NOW, false);
+
+            assertThat(byCorrection.supersededByCorrection()).isTrue();
+            assertThat(byEndorsement.supersededByCorrection())
+                    .as("변경이 구간을 닫은 것은 과거 사실이 틀렸다는 뜻이 아니다")
+                    .isFalse();
+            assertThat(byCorrection.isCurrentRecord()).isFalse();
+        }
+
+        @Test
+        @DisplayName("이미 대체된 기록은 다시 대체할 수 없다")
         void shouldRejectDoubleSupersede() {
-            var coverage = PolicyFixtures.급여입원담보().superseded(NOW);
-            assertThatThrownBy(() -> coverage.superseded(NOW))
+            var coverage = PolicyFixtures.급여입원담보().superseded(NOW, true);
+            assertThatThrownBy(() -> coverage.superseded(NOW, true))
                     .isInstanceOf(IllegalStateException.class);
 
-            var exclusion = PolicyFixtures.척추부담보조건().superseded(NOW);
-            assertThatThrownBy(() -> exclusion.superseded(NOW))
+            var exclusion = PolicyFixtures.척추부담보조건().superseded(NOW, true);
+            assertThatThrownBy(() -> exclusion.superseded(NOW, true))
                     .isInstanceOf(IllegalStateException.class);
 
             var version = PolicyVersion.create(PolicyStatus.IN_FORCE, FROM, TO, NOW, "SYSTEM")
-                    .superseded(NOW);
-            assertThatThrownBy(() -> version.superseded(NOW))
+                    .superseded(NOW, true);
+            assertThatThrownBy(() -> version.superseded(NOW, true))
                     .isInstanceOf(IllegalStateException.class);
         }
 
@@ -395,7 +422,7 @@ class PolicyValueObjectTest {
             assertThat(version.reason()).isEqualTo("미납");
             assertThat(version.actorRef()).isEqualTo("BATCH");
             assertThat(version.toString()).contains("GRACE");
-            assertThatThrownBy(() -> version.endingAt(FROM))
+            assertThatThrownBy(() -> version.closedAt(FROM, NOW))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

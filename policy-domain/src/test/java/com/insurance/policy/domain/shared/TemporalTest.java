@@ -148,8 +148,14 @@ class TemporalTest {
         assertThat(fact.isEffectiveOn(사고일, 재심사시점)).isFalse();
     }
 
-    /** 테스트용 Temporal 구현. 실제 Coverage/Exclusion은 Phase 1에서 만든다. */
+    /** 테스트용 Temporal 구현. */
     private record Fact(LocalDate validFrom, LocalDate validTo,
                         Instant recordedAt, Instant supersededAt) implements Temporal {
+
+        @Override
+        public boolean supersededByCorrection() {
+            // 이 테스트는 두 시간축 판정만 본다. 대체 사유는 Policy 쪽에서 검증한다.
+            return supersededAt != null;
+        }
     }
 }

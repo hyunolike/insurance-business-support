@@ -103,6 +103,9 @@ public interface Temporal {
     Instant   recordedAt();     // 시스템 기록 시점
     Instant   supersededAt();   // 이 레코드가 대체된 시점 (null = 현행)
 
+    /** 대체한 연산이 정정이었는가. 변경(구간 닫기)이면 false. 스냅샷 버전은 정정만 센다 */
+    boolean   supersededByCorrection();
+
     default boolean isEffectiveOn(LocalDate asOf, Instant knownAt) {
         return !asOf.isBefore(validFrom()) && asOf.isBefore(validTo())
             && !knownAt.isBefore(recordedAt())
@@ -118,19 +121,49 @@ public interface Temporal {
 | 연산 | 의미 | `valid` 축 | `recorded` 축 | claims 영향 |
 |---|---|---|---|---|
 | **신규(Create)** | 계약 성립 | 새 구간 시작 | 새 레코드 | `policy.issued` |
-| **변경(Endorsement)** | "오늘부터 바뀐다" | 기존 구간 종료 + 새 구간 시작 | 새 레코드 | `policy.endorsed` — 과거 스냅샷 불변 |
-| **정정(Correction)** | "과거가 원래 그랬다" | **기존 구간을 덮어쓰는 새 버전** | 기존 레코드 `supersededAt` 설정 + 새 레코드 | **`policy.corrected`** — 과거 스냅샷이 바뀜 |
+| **변경(Endorsement)** | "오늘부터 바뀐다" | 기존 기록 대체 + 닫힌 구간·새 구간 INSERT | `superseded_by_correction=FALSE` | `policy.endorsed` — 과거 스냅샷 불변 |
+| **정정(Correction)** | "과거가 원래 그랬다" | 기존 기록 대체 + (대체 기록이 있으면) INSERT | `superseded_by_correction=TRUE` | **`policy.corrected`** — 과거 스냅샷이 바뀜 |
 
 #### 변경 (Endorsement)
 
 ```
 [기존] 담보 A, valid: 2026-01-01 ~ 9999-12-31, recorded: 2026-01-01, superseded: null
-                                ↓ 2026-06-01부터 가입금액 변경
-[수정] 담보 A, valid: 2026-01-01 ~ 2026-06-01, recorded: 2026-01-01, superseded: null
-[신규] 담보 A, valid: 2026-06-01 ~ 9999-12-31, recorded: 2026-06-01, superseded: null
-
-→ asOf=2026-03-14 조회 시 여전히 기존 조건. 과거 심사 재현 OK
+                                ↓ 2026-06-01부터 가입금액 변경 (기록: 2026-05-20)
+[대체] 담보 A, valid: 2026-01-01 ~ 9999-12-31, recorded: 2026-01-01,
+                     superseded: 2026-05-20, superseded_by_correction: FALSE
+[신규] 담보 A, valid: 2026-01-01 ~ 2026-06-01, recorded: 2026-05-20  ← 닫힌 구간
+[신규] 담보 A, valid: 2026-06-01 ~ 9999-12-31, recorded: 2026-05-20  ← 새 조건
 ```
+
+> ⚠️ **기존 행의 `valid_to`를 줄여서 구간을 닫으면 안 된다.**
+> 직관적으로는 "구간을 닫는다 = validTo를 당긴다"로 보이지만, 그러면 시점 재현성이 깨진다.
+>
+> ```
+> 변경 전:  query(asOf=2026-07-01, knownAt=2026-05-01) → 담보 A 반환
+> 변경 후:  query(asOf=2026-07-01, knownAt=2026-05-01) → 아무것도 없음 ❌
+>           · 축소된 구간(01-01~06-01)은 07-01을 덮지 않는다
+>           · 새 구간(06-01~)은 recorded=05-20 > knownAt=05-01 이라 걸러진다
+> ```
+>
+> **같은 `(asOf, knownAt)`이 다른 답을 주면 이 시스템은 의미가 없다.**
+> 그래서 변경도 정정과 똑같이 "기존 기록 대체 + 새 행"으로 처리한다.
+> Phase 1 구현 중 `PolicySnapshotTest`의
+> `변경 이전 knownAt으로 미래 날짜를 조회해도 답이 나온다`가 이 문제를 잡아냈다.
+
+**그렇다면 변경과 정정의 차이는 무엇인가**
+
+둘 다 기존 기록을 대체한다. 구분은 `superseded_by_correction` 플래그에 있다.
+
+| | 변경 | 정정 |
+|---|---|---|
+| `superseded_by_correction` | `FALSE` | `TRUE` |
+| 의미 | "이 사실이 언제까지 유효했는지 확정됐다" | "이 사실 자체가 틀렸었다" |
+| 과거 스냅샷 내용 | **그대로** | **바뀜** |
+| 스냅샷 버전 | 오르지 않음 | **+1** |
+| 이벤트 | `policy.endorsed` | **`policy.corrected`** |
+
+스냅샷 버전이 정정만 세는 이유: 변경이 버전을 올리면 claims 쪽에서
+"과거가 바뀌었다"고 오해해 불필요한 재심사를 돌리게 된다.
 
 #### 정정 (Correction)
 
@@ -152,7 +185,7 @@ public interface Temporal {
 |---|---|---|
 | P1 | 같은 담보의 유효구간이 겹치지 않는다 | DB `EXCLUDE` 제약 (GiST) |
 | P2 | `validFrom < validTo` | `CHECK` |
-| P3 | **기존 레코드를 `UPDATE`하지 않는다** (단, `supersededAt` 설정은 예외) | DB 권한 + 트리거 |
+| P3 | **기존 레코드를 `UPDATE`하지 않는다** (단, 대체 마킹 `supersededAt` + `supersededByCorrection`은 예외) | DB 트리거 |
 | P4 | `recordedAt`은 단조 증가 | 애플리케이션 |
 | P5 | 계약 상태 전이는 전이표를 따른다 | 도메인 메서드 |
 | P6 | 책임개시일 = 승낙일과 초회보험료 납입일 중 **늦은 날** | 도메인 규칙 |

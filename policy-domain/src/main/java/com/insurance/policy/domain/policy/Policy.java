@@ -167,12 +167,13 @@ public final class Policy extends AggregateRoot {
     /**
      * 스냅샷 버전 — {@code knownAt} 시점까지 발생한 <b>정정</b>의 수 + 1.
      *
-     * <p>변경(Endorsement)은 버전을 올리지 않는다. 과거 스냅샷을 바꾸지 않기 때문이다.
-     * 정정만이 "같은 asOf인데 답이 달라졌다"를 뜻하므로 버전이 필요하다.
+     * <p>변경(Endorsement)도 구간을 닫으며 기존 기록을 대체하지만, 그것은 버전을 올리지 않는다.
+     * 변경은 "이 사실이 언제까지 유효했는지"를 확정한 것일 뿐 과거의 사실을 바꾸지 않기 때문이다.
+     * 정정만이 "같은 asOf인데 답이 달라졌다"를 뜻한다.
      */
     private int snapshotVersionAt(Instant knownAt) {
         long corrections = allTemporals()
-                .filter(t -> t.supersededAt() != null)
+                .filter(Temporal::supersededByCorrection)
                 .filter(t -> !knownAt.isBefore(t.supersededAt()))
                 .count();
         return (int) corrections + 1;
@@ -212,8 +213,14 @@ public final class Policy extends AggregateRoot {
                         "변경 적용일 시점에 유효한 담보가 없습니다: " + coverageCode));
 
         LocalDate originalEnd = current.validTo();
+
+        // ★ append-only. 기존 기록의 validTo를 줄이지 않는다.
+        //   줄이면 변경 이전 knownAt으로 미래 날짜를 조회했을 때 아무것도 반환되지 않아
+        //   시점 재현성이 깨진다. 대신 기존 기록을 무효화하고 닫힌 구간을 새로 기록한다.
+        //   byCorrection=false — 과거의 사실이 틀렸던 게 아니므로 스냅샷 버전은 오르지 않는다.
         coverages.remove(current);
-        coverages.add(current.endingAt(effectiveFrom));
+        coverages.add(current.superseded(now, false));
+        coverages.add(current.closedAt(effectiveFrom, now));
         coverages.add(current.withTerms(newTerms, newInsuredAmount, effectiveFrom, originalEnd, now));
 
         record(new PolicyEndorsed(policyNo, List.of(coverageCode), effectiveFrom,
@@ -256,7 +263,7 @@ public final class Policy extends AggregateRoot {
         int previousVersion = snapshotVersionAt(now);
 
         exclusions.remove(target);
-        exclusions.add(target.superseded(now));
+        exclusions.add(target.superseded(now, true));   // byCorrection=true → 버전 증가
         if (replacement != null) {
             exclusions.add(replacement);
         }
@@ -289,8 +296,11 @@ public final class Policy extends AggregateRoot {
         }
 
         LocalDate originalEnd = current.validTo();
+
+        // 담보 변경과 같은 append-only 규칙을 따른다.
         versions.remove(current);
-        versions.add(current.endingAt(effectiveFrom));
+        versions.add(current.superseded(now, false));
+        versions.add(current.closedAt(effectiveFrom, now));
         versions.add(PolicyVersion.endorsement(to, effectiveFrom, originalEnd, now,
                 reason, actorRef));
 
@@ -302,7 +312,8 @@ public final class Policy extends AggregateRoot {
         return versions.stream()
                 .filter(Temporal::isCurrentRecord)
                 .filter(v -> !knownAt.isBefore(v.recordedAt()))
-                .max(Comparator.comparing(PolicyVersion::validFrom))
+                .max(Comparator.comparing(PolicyVersion::validFrom)
+                        .thenComparing(PolicyVersion::recordedAt))
                 .orElseThrow(() -> new IllegalStateException(
                         "계약 상태 이력이 없습니다: " + policyNo));
     }

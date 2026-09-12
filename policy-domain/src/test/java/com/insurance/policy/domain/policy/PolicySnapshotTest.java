@@ -248,6 +248,70 @@ class PolicySnapshotTest {
             assertThat(현재.terms().perVisitLimit()).isEqualTo(300_000L);
         }
 
+
+        @Test
+        @DisplayName("★ 변경 이전 knownAt으로 미래 날짜를 조회해도 답이 나온다")
+        void shouldStillAnswerFutureDatesAtPreEndorsementKnownAt() {
+            var 계약 = 표준계약();
+            Instant 변경전 = Instant.parse("2026-05-01T00:00:00Z");
+
+            // 변경 전에 7월 1일 사고를 조회하면 기존 조건이 나온다
+            var 변경전답 = 계약.snapshotAsOf(LocalDate.of(2026, 7, 1), 변경전)
+                    .coverages().stream()
+                    .filter(c -> c.coverageCode().equals(비급여통원)).findFirst().orElseThrow();
+            assertThat(변경전답.terms().perVisitLimit()).isEqualTo(200_000L);
+
+            계약.endorseCoverage(비급여통원,
+                    CoverageTerms.flatDeductible(new BigDecimal("0.30"), 30_000L, 300_000L, 100),
+                    Money.ofWon(300_000L), 변경일, "고객 요청", "CS-001", 변경기록);
+
+            // 변경 후에도 같은 질문에 같은 답이 나와야 한다.
+            //
+            // 기존 기록의 validTo를 줄여 구간을 닫았다면 여기서 깨진다 —
+            // 축소된 구간(1/1~6/1)은 7/1을 덮지 않고, 새 구간은 recordedAt이 변경기록이라
+            // knownAt=변경전 시점에는 아직 기록되지 않은 것으로 걸러진다.
+            // 결과적으로 아무것도 반환되지 않는다.
+            var 변경후답 = 계약.snapshotAsOf(LocalDate.of(2026, 7, 1), 변경전)
+                    .coverages().stream()
+                    .filter(c -> c.coverageCode().equals(비급여통원)).findFirst()
+                    .orElseThrow(() -> new AssertionError(
+                            "변경 이전 knownAt으로 조회했는데 담보가 사라졌다. "
+                                    + "구간을 닫을 때 기존 행을 수정했다는 뜻이다."));
+            assertThat(변경후답.terms().perVisitLimit())
+                    .as("같은 (asOf, knownAt)은 영원히 같은 답이어야 한다")
+                    .isEqualTo(200_000L);
+        }
+
+        @Test
+        @DisplayName("변경은 기존 기록을 수정하지 않고 대체한다")
+        void shouldSupersedeRatherThanMutate() {
+            var 계약 = 표준계약();
+            var 변경전원본 = 계약.allCoverages().stream()
+                    .filter(c -> c.coverageCode().equals(비급여통원)).findFirst().orElseThrow();
+            assertThat(변경전원본.validTo()).isEqualTo(만기일);
+
+            계약.endorseCoverage(비급여통원,
+                    CoverageTerms.flatDeductible(new BigDecimal("0.30"), 30_000L, 300_000L, 100),
+                    Money.ofWon(300_000L), 변경일, "고객 요청", "CS-001", 변경기록);
+
+            var 해당담보 = 계약.allCoverages().stream()
+                    .filter(c -> c.coverageCode().equals(비급여통원)).toList();
+
+            assertThat(해당담보)
+                    .as("원본(대체됨) + 닫힌 구간 + 새 조건 = 3건")
+                    .hasSize(3);
+            assertThat(해당담보).filteredOn(c -> c.supersededAt() != null)
+                    .singleElement()
+                    .satisfies(c -> {
+                        assertThat(c.validTo())
+                                .as("원본의 유효기간은 그대로다")
+                                .isEqualTo(만기일);
+                        assertThat(c.supersededByCorrection())
+                                .as("변경이 대체한 것이지 정정이 아니다")
+                                .isFalse();
+                    });
+        }
+
         @Test
         @DisplayName("변경은 스냅샷 버전을 올리지 않는다 — 과거가 그대로이므로")
         void shouldNotBumpSnapshotVersion() {

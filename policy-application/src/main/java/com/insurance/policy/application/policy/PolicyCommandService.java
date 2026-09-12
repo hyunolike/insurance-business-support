@@ -68,7 +68,7 @@ public class PolicyCommandService {
     @Transactional
     public void endorse(EndorseCoverageCommand cmd) {
         Instant now = Instant.now(clock);
-        Policy policy = policyRepository.findCurrent(cmd.policyNo())
+        Policy policy = policyRepository.load(cmd.policyNo())
                 .orElseThrow(() -> new PolicyNotFoundException(cmd.policyNo()));
 
         policy.endorseCoverage(cmd.coverageCode(), cmd.newTerms(), cmd.newInsuredAmount(),
@@ -86,7 +86,7 @@ public class PolicyCommandService {
     @Transactional
     public void correctExclusion(CorrectExclusionCommand cmd) {
         Instant now = Instant.now(clock);
-        Policy policy = policyRepository.findCurrent(cmd.policyNo())
+        Policy policy = policyRepository.load(cmd.policyNo())
                 .orElseThrow(() -> new PolicyNotFoundException(cmd.policyNo()));
 
         var target = policy.allExclusions().stream()
@@ -115,7 +115,7 @@ public class PolicyCommandService {
     @Transactional
     public void changeStatus(ChangeStatusCommand cmd) {
         Instant now = Instant.now(clock);
-        Policy policy = policyRepository.findCurrent(cmd.policyNo())
+        Policy policy = policyRepository.load(cmd.policyNo())
                 .orElseThrow(() -> new PolicyNotFoundException(cmd.policyNo()));
 
         policy.changeStatus(cmd.toStatus(), cmd.effectiveFrom(), cmd.reason(),

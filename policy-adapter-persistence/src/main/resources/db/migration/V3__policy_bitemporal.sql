@@ -6,9 +6,17 @@
 --   유효시간 (valid_from / valid_to)         "2026-03-14에 이 계약은 어땠나?"
 --   기록시간 (recorded_at / superseded_at)   "그 답을 우리는 언제부터 알았나?"
 --
--- 핵심 규칙: 기존 행을 UPDATE하지 않는다.
---   변경(Endorsement) = 기존 구간을 닫고 새 행 INSERT
---   정정(Correction)  = superseded_at 마킹(유일하게 허용되는 UPDATE) + 새 행 INSERT
+-- 핵심 규칙: 기존 행을 UPDATE하지 않는다. 유일하게 허용되는 UPDATE는 대체 마킹
+-- (superseded_at + superseded_by_correction)뿐이다.
+--
+--   변경(Endorsement) = 기존 기록 대체 마킹(by_correction=FALSE)
+--                       + 닫힌 구간 새 행 + 새 조건 새 행
+--   정정(Correction)  = 기존 기록 대체 마킹(by_correction=TRUE) + (대체 기록이 있으면) 새 행
+--
+-- ★ valid_to 를 줄여 구간을 닫지 않는다.
+--   줄이면 변경 이전 knownAt 으로 미래 날짜를 조회했을 때 축소된 구간이 그 날짜를 덮지 않고
+--   새 구간은 아직 기록되지 않아 아무것도 반환되지 않는다.
+--   같은 (asOf, knownAt) 이 다른 답을 주면 이 시스템은 의미가 없다.
 --
 -- docs/design/06-data-model.md §3
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +61,10 @@ CREATE TABLE policy_version (
     valid_to      DATE         NOT NULL,
     recorded_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     superseded_at TIMESTAMPTZ  NULL,
+    -- 이 기록을 대체한 연산이 정정이었는가.
+    -- 변경(구간 닫기)도 기존 기록을 대체하지만 과거의 사실을 바꾸지는 않는다.
+    -- 스냅샷 버전은 정정만 센다.
+    superseded_by_correction BOOLEAN NOT NULL DEFAULT FALSE,
 
     change_type   VARCHAR(16)  NOT NULL,
     reason        TEXT         NULL,
@@ -99,6 +111,7 @@ CREATE TABLE coverage_version (
     valid_to                DATE         NOT NULL,
     recorded_at             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     superseded_at           TIMESTAMPTZ  NULL,
+    superseded_by_correction BOOLEAN     NOT NULL DEFAULT FALSE,
     change_type             VARCHAR(16)  NOT NULL,
 
     CONSTRAINT coverage_version_range CHECK (valid_from < valid_to),
@@ -149,6 +162,7 @@ CREATE TABLE exclusion_version (
     valid_to      DATE         NOT NULL,
     recorded_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     superseded_at TIMESTAMPTZ  NULL,
+    superseded_by_correction BOOLEAN NOT NULL DEFAULT FALSE,
     change_type   VARCHAR(16)  NOT NULL,
 
     CONSTRAINT exclusion_version_range CHECK (valid_from < valid_to),
@@ -206,15 +220,21 @@ CREATE INDEX idx_correction_policy ON correction_log (policy_no, corrected_at DE
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION reject_history_mutation() RETURNS TRIGGER AS $$
 BEGIN
-    IF (to_jsonb(NEW) - 'superseded_at') IS DISTINCT FROM (to_jsonb(OLD) - 'superseded_at') THEN
+    -- 대체 마킹(superseded_at + superseded_by_correction) 외의 모든 수정을 거부한다.
+    -- validTo 를 줄여 구간을 닫는 것도 금지다 — 변경 이전 knownAt 으로 미래 날짜를
+    -- 조회했을 때 아무것도 반환되지 않아 시점 재현성이 깨지기 때문이다.
+    -- 구간을 닫을 때도 기존 기록을 대체하고 닫힌 구간을 새 행으로 기록해야 한다.
+    IF (to_jsonb(NEW) - 'superseded_at' - 'superseded_by_correction')
+       IS DISTINCT FROM
+       (to_jsonb(OLD) - 'superseded_at' - 'superseded_by_correction') THEN
         RAISE EXCEPTION
-            '이력 레코드는 superseded_at 외에는 수정할 수 없습니다 (table=%, id=%). '
-            '변경은 새 행, 정정은 superseded_at 마킹 + 새 행으로 표현하세요.',
+            '이력 레코드는 대체 마킹 외에는 수정할 수 없습니다 (table=%, id=%). '
+            '변경도 정정도 새 행으로 표현하세요. validTo 를 줄이는 것도 금지입니다.',
             TG_TABLE_NAME, OLD.id;
     END IF;
     IF OLD.superseded_at IS NOT NULL AND NEW.superseded_at IS DISTINCT FROM OLD.superseded_at THEN
         RAISE EXCEPTION
-            '이미 정정된 기록의 superseded_at은 다시 바꿀 수 없습니다 (table=%, id=%).',
+            '이미 대체된 기록의 superseded_at은 다시 바꿀 수 없습니다 (table=%, id=%).',
             TG_TABLE_NAME, OLD.id;
     END IF;
     RETURN NEW;
