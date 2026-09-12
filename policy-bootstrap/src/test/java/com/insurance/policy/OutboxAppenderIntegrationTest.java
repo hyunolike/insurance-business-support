@@ -3,6 +3,8 @@ package com.insurance.policy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insurance.policy.application.port.out.OutboxAppender;
 import com.insurance.policy.domain.shared.DomainEvent;
 import com.insurance.policy.domain.shared.EventId;
@@ -88,9 +90,18 @@ class OutboxAppenderIntegrationTest extends IntegrationTestBase {
                 .isEqualTo("P2026-0001236");
         assertThat(row.get("status")).isEqualTo("PENDING");
         assertThat(row.get("attempts")).isEqualTo(0);
-        assertThat((String) row.get("envelope"))
-                .contains("\"producer\":\"business-support\"")
-                .contains("\"eventType\":\"policy.corrected\"");
+        // envelope 컬럼은 jsonb다. PostgreSQL이 저장 시 정규화하므로 우리가 만든
+        // 문자열 그대로 돌아오지 않는다 — 키 순서가 바뀌고 콜론 뒤에 공백이 붙는다.
+        // 문자열 비교는 그래서 틀린 방법이다. 파싱해서 값을 본다.
+        JsonNode envelope = readEnvelope((String) row.get("envelope"));
+
+        assertThat(envelope.get("producer").asText()).isEqualTo("business-support");
+        assertThat(envelope.get("eventType").asText()).isEqualTo("policy.corrected");
+        assertThat(envelope.get("eventVersion").asInt()).isEqualTo(1);
+        // 페이로드는 이벤트가 손으로 만든 것이 그대로 실린다.
+        // 리플렉션 직렬화 시절에는 EventId에 게터가 없어 여기서 전부 터졌다.
+        assertThat(envelope.get("payload").get("policyNo").asText())
+                .isEqualTo("P2026-0001236");
     }
 
     @Test
@@ -104,6 +115,14 @@ class OutboxAppenderIntegrationTest extends IntegrationTestBase {
         });
 
         assertThat(totalCount()).isEqualTo(before);
+    }
+
+    private JsonNode readEnvelope(String json) {
+        try {
+            return new ObjectMapper().readTree(json);
+        } catch (Exception e) {
+            throw new AssertionError("봉투 JSON을 읽을 수 없습니다: " + json, e);
+        }
     }
 
     private int countByEventId(String eventId) {
