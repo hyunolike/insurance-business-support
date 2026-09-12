@@ -420,15 +420,15 @@ public class PolicyJdbcRepository implements PolicyRepository {
         Timestamp known = pointInTime ? Timestamp.from(knownAt) : null;
 
         List<PolicyVersion> versions = pointInTime
-                ? jdbc.query(VERSION_ASOF_SQL, VERSION_MAPPER, policyNo.value(), asOf, asOf, known, known)
+                ? jdbc.query(VERSION_ASOF_SQL, VERSION_MAPPER, policyNo.value(), asOf, asOf, known, known, known, known)
                 : jdbc.query(VERSION_CURRENT_SQL, VERSION_MAPPER, policyNo.value());
 
         List<Coverage> coverages = pointInTime
-                ? jdbc.query(COVERAGE_ASOF_SQL, coverageMapper(), policyNo.value(), asOf, asOf, known, known)
+                ? jdbc.query(COVERAGE_ASOF_SQL, coverageMapper(), policyNo.value(), asOf, asOf, known, known, known, known)
                 : jdbc.query(COVERAGE_CURRENT_SQL, coverageMapper(), policyNo.value());
 
         List<Exclusion> exclusions = pointInTime
-                ? jdbc.query(EXCLUSION_ASOF_SQL, EXCLUSION_MAPPER, policyNo.value(), asOf, asOf, known, known)
+                ? jdbc.query(EXCLUSION_ASOF_SQL, EXCLUSION_MAPPER, policyNo.value(), asOf, asOf, known, known, known, known)
                 : jdbc.query(EXCLUSION_CURRENT_SQL, EXCLUSION_MAPPER, policyNo.value());
 
         return Optional.of(Policy.rehydrate(
@@ -442,10 +442,35 @@ public class PolicyJdbcRepository implements PolicyRepository {
                 versions, coverages, exclusions));
     }
 
+    /**
+     * ★ 시점 조회 조건.
+     *
+     * <p>두 갈래다. 앞쪽이 <b>그 시점에 유효했던 사실</b>이고, 뒤쪽이
+     * <b>스냅샷 버전을 세기 위한 정정 흔적</b>이다.
+     *
+     * <p>뒤쪽이 없으면 어떻게 되는지가 중요하다. 정정으로 대체된 기록은
+     * {@code superseded_at <= knownAt} 이므로 앞쪽 조건에서 걸러진다. 그런데
+     * {@code Policy.snapshotAsOf} 는 <b>바로 그 기록들을 세어</b> 스냅샷 버전을 정한다.
+     * 걸러버리면 정정을 몇 번 했든 버전이 영원히 1이고,
+     * claims 는 "과거가 바뀌었다"는 신호를 받지 못해 재심사를 돌리지 않는다.
+     *
+     * <p>뒤쪽 갈래로 들어온 행이 응답에 섞이지는 않는다. {@code isEffectiveOn} 이
+     * {@code wasKnownAt} 으로 한 번 더 거르기 때문이다 — 세는 데만 쓰인다.
+     *
+     * <p>유효기간 조건을 뒤쪽에 걸지 않는 것도 의도다. 버전은 "이 계약에 정정이
+     * 몇 번 있었나"이지 "이 구간에 몇 번"이 아니다. 구간으로 제한하면 전체 이력을 읽는
+     * {@code load()} 와 답이 달라지고, {@code policy.corrected} 이벤트가 알린 버전과도
+     * 어긋난다.
+     */
     private static final String ASOF_PREDICATE = """
-              AND valid_from <= ? AND ? < valid_to
-              AND recorded_at <= ?
-              AND (superseded_at IS NULL OR superseded_at > ?)
+              AND (
+                    (    valid_from <= ? AND ? < valid_to
+                     AND recorded_at <= ?
+                     AND (superseded_at IS NULL OR superseded_at > ?))
+                 OR (    superseded_by_correction = TRUE
+                     AND superseded_at <= ?
+                     AND recorded_at <= ?)
+                  )
             """;
 
     private static final String VERSION_COLUMNS =

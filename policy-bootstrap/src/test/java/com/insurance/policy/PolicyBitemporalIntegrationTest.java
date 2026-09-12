@@ -174,6 +174,43 @@ class PolicyBitemporalIntegrationTest extends IntegrationTestBase {
         }
 
         @Test
+        @DisplayName("★★ 스냅샷 API 경로와 쓰기 경로가 같은 스냅샷 버전을 준다")
+        void shouldAgreeOnSnapshotVersionAcrossLoadPaths() {
+            부담보계약저장();
+            commandService.correctExclusion(new PolicyCommandService.CorrectExclusionCommand(
+                    POLICY_NO, 척추부담보, null, "착오 정정", "UW-0007", "UW-MANAGER-003"));
+
+            Instant 지금 = Instant.now();
+
+            // findAsOf 는 스냅샷 API 의 뜨거운 경로다. 필요한 행만 읽는데,
+            // 정정으로 대체된 행까지 빼버리면 버전을 셀 수 없어 영원히 1이 나온다.
+            // 그러면 claims 는 "과거가 바뀌었다"는 신호를 못 받아 재심사를 돌리지 않는다.
+            int 시점조회버전 = policyRepository.findAsOf(POLICY_NO, 사고일, 지금)
+                    .orElseThrow().snapshotAsOf(사고일, 지금).snapshotVersion();
+            int 전체이력버전 = policyRepository.load(POLICY_NO)
+                    .orElseThrow().snapshotAsOf(사고일, 지금).snapshotVersion();
+
+            assertThat(시점조회버전)
+                    .as("두 경로가 다른 답을 주면 policy.corrected 이벤트가 알린 버전과도 어긋난다")
+                    .isEqualTo(전체이력버전)
+                    .isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("정정 전 시점으로 조회하면 버전이 오르지 않는다")
+        void shouldNotBumpVersionBeforeCorrection() {
+            부담보계약저장();
+            Instant 정정직전 = Instant.now();
+            commandService.correctExclusion(new PolicyCommandService.CorrectExclusionCommand(
+                    POLICY_NO, 척추부담보, null, "착오 정정", "UW-0007", "UW-MANAGER-003"));
+
+            assertThat(policyRepository.findAsOf(POLICY_NO, 사고일, 정정직전)
+                    .orElseThrow().snapshotAsOf(사고일, 정정직전).snapshotVersion())
+                    .as("그 시점에는 아직 정정을 몰랐다")
+                    .isEqualTo(1);
+        }
+
+        @Test
         @DisplayName("정정으로 부담보를 교체할 수 있다")
         void shouldReplaceExclusion() {
             부담보계약저장();
