@@ -71,6 +71,12 @@ jobs:
       - name: Architecture rules
         run: ./gradlew :policy-bootstrap:test --tests '*ArchitectureTest' --no-daemon
 
+      # ── 계약 테스트 ──────────────────────────────────────────────────
+      # business-support 와의 스냅샷 계약. 알고리즘이나 필드 표현이 한쪽에서만
+      # 바뀌면 여기서 깨진다 — 배포 후 런타임이 아니라 PR 에서.
+      - name: Contract test
+        run: ./gradlew contractTest --no-daemon
+
       # ── 커버리지 게이트 ──────────────────────────────────────────────
       # 도메인 브랜치 85% / 라인 90%. 시점 판정 로직은 분기가 곧 규칙이다.
       - name: Coverage gate

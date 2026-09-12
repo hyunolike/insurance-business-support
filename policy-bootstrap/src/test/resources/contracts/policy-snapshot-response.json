@@ -1,0 +1,77 @@
+{
+  "$contract": "claims → business-support. 이 파일은 소비자(claims)가 선언한다.",
+  "$description": "표준 4세대 실손 계약. 부담보 없음. 사고일 2026-03-14, 청구 접수 시점 조회.",
+  "$given": "표준계약",
+  "$note": "여기 적힌 필드는 claims 심사가 실제로 읽는 것들이다. 적히지 않은 필드가 응답에 더 있어도 위반이 아니다(필드 추가는 하위 호환). 값이 다르거나 없으면 위반이다.",
+
+  "policyNo": "P2026-0001234",
+  "asOf": "2026-03-14",
+  "knownAt": "2026-04-02T01:15:00Z",
+  "snapshotVersion": 1,
+  "product": {
+    "productCode": "MED-INDEM-G4",
+    "generation": "G4"
+  },
+  "policyStatusAsOf": "IN_FORCE",
+  "policyPeriod": {
+    "from": "2026-01-01",
+    "to": "2031-01-01"
+  },
+  "effectiveDate": "2026-01-01",
+  "insured": {
+    "insuredRef": "CI-a1b2c3d4",
+    "birthYear": 1988,
+    "relationToHolder": "SELF"
+  },
+  "coverages": [
+    {
+      "coverageCode": "COV-INPT-COVERED",
+      "treatmentTypes": ["INPATIENT"],
+      "benefitCategory": "COVERED",
+      "insuredAmount": 50000000,
+      "terms": {
+        "coinsuranceRate": "0.20",
+        "minDeductible": null,
+        "annualLimit": 50000000
+      }
+    },
+    {
+      "coverageCode": "COV-OUTP-COVERED",
+      "treatmentTypes": ["OUTPATIENT"],
+      "benefitCategory": "COVERED",
+      "insuredAmount": 200000,
+      "terms": {
+        "coinsuranceRate": "0.20",
+        "minDeductibleByGrade": {
+          "CLINIC": 10000,
+          "GENERAL": 15000,
+          "HOSPITAL": 15000,
+          "TERTIARY": 20000
+        },
+        "perVisitLimit": 200000,
+        "annualCountLimit": 100
+      }
+    },
+    {
+      "coverageCode": "COV-OUTP-UNCOVERED",
+      "treatmentTypes": ["OUTPATIENT"],
+      "benefitCategory": "UNCOVERED",
+      "insuredAmount": 200000,
+      "terms": {
+        "coinsuranceRate": "0.30",
+        "minDeductible": 30000,
+        "perVisitLimit": 200000,
+        "annualCountLimit": 100
+      }
+    }
+  ],
+  "exclusions": [],
+  "benefitYear": {
+    "label": "1년차(2026-01-01~)",
+    "from": "2026-01-01",
+    "to": "2027-01-01"
+  },
+
+  "$checksumNote": "checksum 필드를 제외한 본문의 정규화 JSON(키 정렬 + 공백 제거)에 대한 SHA-256. claims가 저장된 스냅샷의 무결성을 이 값으로 확인한다. 이 값이 달라지면 이미 저장된 모든 스냅샷의 검증이 실패한다.",
+  "checksum": "sha256:f7efed77f58bddfa7869d82154395b613831c2f1aa85add1bdc1be7244cf31b5"
+}

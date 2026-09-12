@@ -1,0 +1,43 @@
+{
+  "$contract": "claims → business-support. 이 파일은 소비자(claims)가 선언한다.",
+  "$description": "★ 스냅샷 응답에 절대 있어서는 안 되는 필드.",
+  "$why": [
+    "다른 계약 파일은 '있어야 할 것이 있는가'를 본다. 이것은 반대다.",
+    "필드는 실수로 늘어나기 쉽고, 늘어나도 소비자는 불편을 못 느끼므로 아무도 알아채지 못한다.",
+    "개인정보는 그렇게 샌다. 그래서 소비자가 '받고 싶지 않은 것'을 명시적으로 선언한다.",
+    "claims가 심사에 필요한 것은 고지 내용이 아니라 그 결과물인 부담보 조건이다."
+  ],
+
+  "forbiddenFieldNames": [
+    "disclosure",
+    "disclosures",
+    "notification",
+    "healthDisclosure",
+    "medicalHistory",
+    "diagnosis",
+    "diagnosisName",
+
+    "insuredName",
+    "holderName",
+    "residentRegistrationNumber",
+    "rrn",
+    "birthDate",
+
+    "address",
+    "zipCode",
+    "phone",
+    "phoneNumber",
+    "email",
+
+    "agent",
+    "agentCode",
+    "agentName",
+    "channelCode",
+
+    "premium",
+    "premiumAmount",
+    "monthlyPremium",
+    "paymentAccount",
+    "accountNumber"
+  ]
+}

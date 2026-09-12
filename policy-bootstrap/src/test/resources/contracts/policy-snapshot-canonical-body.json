@@ -1,0 +1,14 @@
+{
+  "$contract": "claims ↔ business-support 양쪽이 고정하는 바이트열.",
+  "$description": "★ 체크섬 알고리즘 합의. 부담보계약 / asOf=2026-03-14 / knownAt=2026-04-02T01:15:00Z",
+  "$why": [
+    "다른 계약 파일은 '필드가 있는가'를 본다. 이것은 '바이트가 같은가'를 본다.",
+    "BS 는 렌더한 결과가 정확히 이 바이트인지 확인한다.",
+    "claims 는 이 바이트를 자기 알고리즘으로 해싱해 같은 체크섬이 나오는지 확인한다.",
+    "둘 다 통과해야 'claims 가 저장한 스냅샷을 나중에 검증할 수 있다'가 성립한다.",
+    "한쪽만 두면 순환 검증이다 — 자기가 만든 값을 자기가 확인하는 것에 불과하다."
+  ],
+  "$note": "정규화 = 키 정렬(ORDER_MAP_ENTRIES_BY_KEYS) + 공백 제거 + NON_NULL 미적용(ALWAYS). checksum 필드는 null 인 상태로 포함된다 — 체크섬은 자기 자신을 포함해 계산할 수 없기 때문이다.",
+  "canonicalBody": "{\"policyNo\":\"P2026-0001234\",\"asOf\":\"2026-03-14\",\"knownAt\":\"2026-04-02T01:15:00Z\",\"snapshotVersion\":1,\"product\":{\"productCode\":\"MED-INDEM-G4\",\"productName\":\"4세대 실손의료보험\",\"generation\":\"G4\"},\"policyStatusAsOf\":\"IN_FORCE\",\"policyPeriod\":{\"from\":\"2026-01-01\",\"to\":\"2031-01-01\"},\"effectiveDate\":\"2026-01-01\",\"insured\":{\"insuredRef\":\"CI-a1b2c3d4\",\"birthYear\":1988,\"relationToHolder\":\"SELF\"},\"coverages\":[{\"coverageCode\":\"COV-INPT-COVERED\",\"name\":\"급여 입원의료비\",\"treatmentTypes\":[\"INPATIENT\"],\"benefitCategory\":\"COVERED\",\"insuredAmount\":50000000,\"terms\":{\"coinsuranceRate\":\"0.20\",\"minDeductible\":null,\"minDeductibleByGrade\":null,\"annualLimit\":50000000,\"perVisitLimit\":null,\"annualCountLimit\":null},\"waitingPeriodEnd\":null},{\"coverageCode\":\"COV-OUTP-COVERED\",\"name\":\"급여 통원의료비\",\"treatmentTypes\":[\"OUTPATIENT\"],\"benefitCategory\":\"COVERED\",\"insuredAmount\":200000,\"terms\":{\"coinsuranceRate\":\"0.20\",\"minDeductible\":null,\"minDeductibleByGrade\":{\"CLINIC\":10000,\"GENERAL\":15000,\"HOSPITAL\":15000,\"TERTIARY\":20000},\"annualLimit\":null,\"perVisitLimit\":200000,\"annualCountLimit\":100},\"waitingPeriodEnd\":null},{\"coverageCode\":\"COV-OUTP-UNCOVERED\",\"name\":\"비급여 통원의료비\",\"treatmentTypes\":[\"OUTPATIENT\"],\"benefitCategory\":\"UNCOVERED\",\"insuredAmount\":200000,\"terms\":{\"coinsuranceRate\":\"0.30\",\"minDeductible\":30000,\"minDeductibleByGrade\":null,\"annualLimit\":null,\"perVisitLimit\":200000,\"annualCountLimit\":100},\"waitingPeriodEnd\":null}],\"exclusions\":[{\"exclusionId\":\"EXC-2026-000045\",\"type\":\"BODY_PART\",\"target\":\"척추 및 그 부속기관\",\"kcdRanges\":[\"M40-M54\"],\"from\":\"2026-01-01\",\"until\":\"2031-01-01\",\"reason\":\"언더라이팅 부담보\",\"uwCaseNo\":\"U-2026-0012\"}],\"benefitYear\":{\"label\":\"1년차(2026-01-01~)\",\"from\":\"2026-01-01\",\"to\":\"2027-01-01\"},\"checksum\":null}",
+  "checksum": "sha256:011c720a5a18be217e71c41ec2c220ce2653fdbb1301bb45cb249aa704ccdf27"
+}

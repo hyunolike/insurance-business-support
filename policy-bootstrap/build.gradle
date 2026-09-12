@@ -32,3 +32,32 @@ dependencies {
 jacocoTestCoverageVerification {
     violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
 }
+
+// ─── ★ 계약 테스트 ────────────────────────────────────────────────────────────
+// claims 가 선언한 소비자 계약(src/test/resources/contracts/)을 이 저장소가
+// 만족하는지 검증한다. 계약을 깨면 claims 배포 후 런타임이 아니라 여기 PR 에서 잡힌다.
+//
+// Docker 도 Spring 컨텍스트도 필요 없다. 계약은 응답의 '모양'에 관한 것이고
+// 그것은 도메인 픽스처 → 응답 DTO 변환만으로 전부 드러난다.
+// 누구나 로컬에서 즉시 계약 위반을 알 수 있어야 한다.
+tasks.register('contractTest', Test) {
+    group = 'verification'
+    description = 'claims 가 정의한 계약을 실제 응답이 만족하는지 검증'
+
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+
+    useJUnitPlatform { includeTags 'contract' }
+    testLogging {
+        events 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+// build 에 포함시킨다. "나중에 따로 돌리는 것"이 되면 아무도 안 돌린다.
+tasks.named('check') { dependsOn 'contractTest' }
+
+// 일반 test 에서는 제외한다 — contractTest 가 같은 것을 다시 돌릴 필요가 없다.
+tasks.named('test') {
+    useJUnitPlatform { excludeTags 'contract' }
+}

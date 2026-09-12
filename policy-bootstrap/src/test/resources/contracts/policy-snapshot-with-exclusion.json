@@ -1,0 +1,32 @@
+{
+  "$contract": "claims → business-support. 이 파일은 소비자(claims)가 선언한다.",
+  "$description": "척추 부담보가 붙은 계약. claims의 부지급 판정(D-POL-004)이 이 응답의 exclusions[]를 근거로 삼는다.",
+  "$given": "부담보계약",
+
+  "policyNo": "P2026-0001234",
+  "asOf": "2026-03-14",
+  "snapshotVersion": 1,
+  "policyStatusAsOf": "IN_FORCE",
+  "effectiveDate": "2026-01-01",
+
+  "$exclusionNote": "kcdRanges는 건강정보를 추론할 수 있는 값이지만, 이것 없이는 claims가 부지급을 판정할 수 없다. 최소권한 원칙의 의도적 예외이며, 그래서 형식이 고정되어야 한다. uwCaseNo는 '왜 이 부담보가 붙었나'를 인수심사까지 역추적하는 경로다.",
+  "exclusions": [
+    {
+      "exclusionId": "EXC-2026-000045",
+      "type": "BODY_PART",
+      "target": "척추 및 그 부속기관",
+      "kcdRanges": ["M40-M54"],
+      "from": "2026-01-01",
+      "until": "2031-01-01",
+      "uwCaseNo": "U-2026-0012"
+    }
+  ],
+
+  "benefitYear": {
+    "label": "1년차(2026-01-01~)",
+    "from": "2026-01-01",
+    "to": "2027-01-01"
+  },
+
+  "checksum": "sha256:011c720a5a18be217e71c41ec2c220ce2653fdbb1301bb45cb249aa704ccdf27"
+}
