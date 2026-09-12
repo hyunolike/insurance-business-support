@@ -83,49 +83,66 @@ flowchart LR
 
 ---
 
-## Phase 1 🔵 — 계약 모델 + 스냅샷 API
+## Phase 1 🔵 — 계약 모델 + 스냅샷 API  🔨 진행 중
 
 **claims의 진행을 여는 열쇠. 가장 중요한 단계.**
 
+> **현재 상태**: 도메인·영속성·스냅샷 API까지 구현 완료. 아래 표의 ✅ 참고.
+> 남은 항목(조회 API, 변경/정정 컨트롤러, 릴레이, 시드, 계약 테스트)을 마치면
+> claims에 Phase 2 시작을 알린다.
+
 ### 1-A. 도메인
 
-| # | 작업 | 완료 기준 |
+| # | 작업 | 상태 |
 |---|---|---|
-| 1-1 | `Temporal` 인터페이스 + `isEffectiveOn(asOf, knownAt)` | 순수 단위 테스트 |
-| 1-2 | `Policy` 애그리거트 + `snapshotAsOf()` | DB 없이 테스트 가능 |
-| 1-3 | `Coverage` · `Exclusion` (시간축 보유) | — |
-| 1-4 | `PolicyStatus` + `PolicyTransitions` 전이표 | 위반 시 예외 |
-| 1-5 | `Money` (원 단위 정수), `PolicyNo` (시퀀스) | — |
-| 1-6 | `SnapshotChecksum` (정규화 JSON SHA-256) | claims와 동일 알고리즘 |
+| 1-1 | `Temporal` + `isEffectiveOn(asOf, knownAt)` | ✅ Phase 0 |
+| 1-2 | `Policy` 애그리거트 + `snapshotAsOf()` | ✅ DB 없이 테스트됨 |
+| 1-3 | `Coverage` · `Exclusion` (시간축 보유, 세터 없음) | ✅ |
+| 1-4 | `PolicyStatus` + `PolicyTransitions` 전이표 | ✅ 위반 시 409 |
+| 1-5 | `PolicyNo` · `ExclusionId` · `KcdRange` · `CoverageTerms` · `BenefitYear` | ✅ |
+| 1-6 | `SnapshotChecksum` (정규화 JSON SHA-256) | ✅ |
 
 ### 1-B. 영속성
 
-| # | 작업 |
-|---|---|
-| 1-7 | `policy` + `policy_version` + `coverage_version` + `exclusion_version` |
-| 1-8 | `EXCLUDE USING gist` 겹침 방지 제약 |
-| 1-9 | 이력 불변 트리거 + DB 권한 제한 |
-| 1-10 | `findAsOf(no, asOf, knownAt)` — 필요한 행만 로드 |
-| 1-11 | `correction_log` (승인자 필수) |
+| # | 작업 | 상태 |
+|---|---|---|
+| 1-7 | `policy` + `policy_version` + `coverage_version` + `exclusion_version` | ✅ V3 |
+| 1-8 | `EXCLUDE USING gist` 겹침 방지 제약 | ✅ |
+| 1-9 | 이력 불변 트리거 | ✅ |
+| 1-10 | `findAsOf(no, asOf, knownAt)` — 필요한 행만 로드 | ✅ |
+| 1-11 | `correction_log` (승인자 ≠ 요청자, DB 제약) | ✅ |
+
+> **JPA를 쓰지 않았다.** Hibernate 더티 체킹은 영속 엔티티의 변경을 자동으로 UPDATE로 바꾸는데,
+> Bitemporal 이력에서 그것은 과거를 조용히 변조하는 것이다. 트리거가 막아 주긴 하지만
+> 애초에 UPDATE가 발생할 수 없는 구조가 낫다. `PolicyJdbcRepository`가 내보내는 SQL은
+> INSERT/SELECT뿐이고, 유일한 예외가 정정 시 `superseded_at` 마킹이다.
 
 ### 1-C. API
 
-| # | 작업 |
-|---|---|
-| 1-12 | **`GET /policies/{no}/snapshot?asOf=&knownAt=`** |
-| 1-13 | 스코프 기반 인가 + 조회 감사 로그 |
-| 1-14 | Redis 캐시 (과거 영구 / 현재 5분) |
-| 1-15 | `GET /policies/{no}` · `GET /policies/{no}/history` |
-| 1-16 | `POST /policies/{no}/endorsements` · `/corrections` |
+| # | 작업 | 상태 |
+|---|---|---|
+| 1-12 | **`GET /policies/{no}/snapshot?asOf=&knownAt=`** | ✅ |
+| 1-13 | 스코프 기반 인가 (`SCOPE_policy.snapshot.read`) | ✅ |
+| 1-13b | 스냅샷 조회 감사 로그 | ☐ Phase 6 |
+| 1-14 | Redis 캐시 (과거 영구 / 현재 5분) | ☐ 성능 최적화. 정확성과 무관해 후순위 |
+| 1-15 | `GET /policies/{no}` · `/history` | ☐ |
+| 1-16 | `POST /policies/{no}/endorsements` · `/corrections` | 🔨 서비스 완료, 컨트롤러 미구현 |
+
+> 오류 매핑은 완료했다. 계약 없음·시점 재현 불가 → 404, 상태 전이 위반 → **409**(500 아님),
+> 피보험자 불일치 → **404**(403이 아니다 — 403은 그 계약이 존재한다는 사실을 노출한다).
 
 ### 1-D. 이벤트
 
-| # | 작업 |
-|---|---|
-| 1-17 | Outbox 테이블 + `OutboxAppender` |
-| 1-18 | 폴링 릴레이 (`FOR UPDATE SKIP LOCKED`) |
-| 1-19 | `policy.issued` / `endorsed` / `lapsed` / `terminated` |
-| 1-20 | **`policy.corrected`** + 캐시 무효화 |
+| # | 작업 | 상태 |
+|---|---|---|
+| 1-17 | Outbox 테이블 + `OutboxAppender` | ✅ Phase 0 |
+| 1-18 | 폴링 릴레이 (`FOR UPDATE SKIP LOCKED`) + Kafka 발행 | ☐ |
+| 1-19 | `policy.issued` / `endorsed` / `lapsed` / `reinstated` / `terminated` | ✅ |
+| 1-20 | **`policy.corrected`** | ✅ (캐시 무효화는 1-14와 함께) |
+
+> 이벤트에 부담보 KCD 범위를 싣지 않는다 — 건강정보를 추론할 수 있다.
+> `hasExclusions` 여부만 알리고, 상세가 필요하면 claims가 스냅샷 API로 인가받아 가져간다.
+> 통합 테스트가 이를 검증한다(`envelope`에 `M40-M54`가 없어야 한다).
 
 ### 1-E. 테스트 데이터
 

@@ -7,6 +7,8 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // 스냅샷 API는 서비스 토큰 전용이라 @PreAuthorize 스코프 검사가 필요하다
+    implementation 'org.springframework.security:spring-security-core'
 
     compileOnly libs.lombok
     annotationProcessor libs.lombok

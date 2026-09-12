@@ -144,10 +144,14 @@ class ArchitectureTest {
     static final ArchRule 도메인_금액은_Money로만 =
             noFields()
                     .that().areDeclaredInClassesThat().resideInAPackage("..policy.domain..")
+                    .and(DomainFieldPredicates.isNotARate())
                     .should().haveRawType(BigDecimal.class)
                     .because("금액은 Money(원 단위 정수)로 표현한다. "
-                            + "비율(coinsuranceRate)처럼 소수가 필요한 값만 "
-                            + "BigDecimal을 메서드 인자로 받는다.");
+                            + "BigDecimal 필드는 비율(Rate/Ratio/Percent)에만 허용된다 — "
+                            + "자기부담률처럼 소수가 본질인 값이다. "
+                            + "금액에 BigDecimal을 쓰면 '1원 미만이 존재한다'는 "
+                            + "잘못된 전제가 코드에 새겨진다.")
+                    .allowEmptyShould(true);
 
     /** 로깅 프레임워크를 직접 부르지 않는다 — 도메인에는 로깅할 이유가 없다. */
     @ArchTest
@@ -220,6 +224,30 @@ class ArchitectureTest {
                     .should().beFinal()
                     .because("과거 사실은 바뀌지 않는다. 정정도 새 레코드로 표현한다.")
                     .allowEmptyShould(true);
+
+
+    /** 도메인 필드 판별 술어. */
+    private static final class DomainFieldPredicates {
+        private DomainFieldPredicates() {
+        }
+
+        /**
+         * 이름이 비율을 뜻하지 않는 필드.
+         *
+         * <p>{@code coinsuranceRate}(자기부담률)처럼 소수가 본질인 값은 BigDecimal이 맞다.
+         * 금지해야 하는 것은 <b>금액</b>을 BigDecimal로 표현하는 것이다.
+         */
+        static com.tngtech.archunit.base.DescribedPredicate<
+                com.tngtech.archunit.core.domain.JavaField> isNotARate() {
+            return com.tngtech.archunit.base.DescribedPredicate.describe(
+                    "비율(Rate/Ratio/Percent)이 아닌 필드",
+                    field -> {
+                        String name = field.getName();
+                        return !(name.endsWith("Rate") || name.endsWith("Ratio")
+                                || name.endsWith("Percent"));
+                    });
+        }
+    }
 
     /**
      * 검사 대상이 실제로 로드되는지 확인하는 안전장치.

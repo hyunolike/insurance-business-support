@@ -10,7 +10,7 @@ Claude Code(claude.ai/code)가 이 저장소에서 작업할 때 참고하는 �
 - 짝 저장소: `hyunolike/insurance-claims-platform` (실손의료보험 청구 심사)
 - 스택: Java 21 LTS, Spring Boot 3.x, PostgreSQL 15, Kafka, Redis
 - 아키텍처: DDD + 헥사고날, Gradle 멀티모듈, **Bitemporal 이력**, Transactional Outbox
-- **현재 상태: Phase 0(골격) 완료. 다음은 Phase 1 — claims의 진행을 여는 열쇠**
+- **현재 상태: Phase 1 진행 중. 도메인·영속성·스냅샷 API 완료, 조회/변경 컨트롤러·릴레이·시드·계약 테스트 남음**
 
 ## 작업 전 반드시 읽을 것
 
@@ -135,7 +135,16 @@ feat · fix · docs · refactor · test · chore
 
 ```
 Phase 0  골격 (멀티모듈, ArchUnit, Testcontainers, CI, btree_gist)   ☑ 완료
-Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열쇠        ☐  ← 다음
+Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열쇠        🔨 진행 중
+           ☑ Policy 애그리거트 + snapshotAsOf(asOf, knownAt)
+           ☑ Bitemporal 스키마 (V3) + EXCLUDE 제약 + 이력 불변 트리거
+           ☑ PolicyJdbcRepository (INSERT 전용, superseded_at만 예외)
+           ☑ GET /policies/{no}/snapshot + 체크섬
+           ☐ GET /policies/{no} · /history
+           ☐ POST /endorsements · /corrections 컨트롤러 (서비스는 완료)
+           ☐ Outbox 폴링 릴레이 + Kafka 발행
+           ☐ 테스트 데이터 시드 · 계약 테스트
+           ☐ Redis 캐시 (성능 최적화, 후순위)
 Phase 5  청약 + 언더라이팅                                            ☐
 Phase 6  운영 강화 (감사, 관측성, 부하 테스트)                        ☐
 ```
@@ -145,14 +154,23 @@ Phase 6  운영 강화 (감사, 관측성, 부하 테스트)                    
 ```
 policy-domain/          shared/  Temporal ★ · DomainEvent · EventId(ULID) · AggregateRoot
                         shared/vo/  Money (원 단위 정수)
-policy-application/     port/out/  OutboxAppender
+                        policy/  Policy ★ · Coverage · Exclusion · PolicyVersion
+                                 KcdRange · CoverageTerms · BenefitYear · PolicySnapshot
+                                 PolicyTransitions · SnapshotChecksum
+                        policy/event/  PolicyIssued · Endorsed · Corrected ★ · StatusChanged
+                        testFixtures/  PolicyFixtures (모듈 간 공유)
+policy-application/     port/out/  OutboxAppender · PolicyRepository · PolicyNumberGenerator
+                        policy/  PolicySnapshotService · PolicyCommandService
 policy-adapter-persistence/  outbox/  Entity · Repository · AppenderAdapter
-                             db/migration/V1__extensions.sql (btree_gist)
-                                          V2__baseline_infrastructure.sql
-policy-bootstrap/       PolicyApplication · SecurityConfig
+                             policy/  PolicyJdbcRepository ★ · PolicyNumberJdbcGenerator
+                             db/migration/  V1 btree_gist · V2 운영테이블 · V3 Bitemporal
+policy-adapter-web/     snapshot/  PolicySnapshotController · Response · CanonicalJson
+                        error/  ApiExceptionHandler (409/404 매핑)
+policy-bootstrap/       PolicyApplication · SecurityConfig · TimeConfig
                         test/  ArchitectureTest · FlywayMigrationTest
-                               OutboxAppenderIntegrationTest · IntegrationTestBase
-나머지 모듈              package-info.java 로 책임만 문서화 (Phase 1·5에서 채움)
+                               PolicyBitemporalIntegrationTest ★ · IntegrationTestBase
+policy-underwriting/    package-info.java (Phase 5에서 채움)
+policy-adapter-external/ package-info.java (Phase 5에서 채움)
 ```
 
 `Temporal` 이 이 저장소의 출발점이다. 두 시간축 판정이 순수 함수라

@@ -25,6 +25,8 @@ dependencies {
     testImplementation libs.archunit.junit5
     testImplementation libs.testcontainers.junit
     testImplementation libs.testcontainers.postgresql
+    // 도메인 테스트와 같은 계약 픽스처를 쓴다
+    testImplementation(testFixtures(project(':policy-domain')))
 }
 
 jacocoTestCoverageVerification {
