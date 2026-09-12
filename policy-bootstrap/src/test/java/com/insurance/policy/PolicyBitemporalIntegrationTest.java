@@ -4,6 +4,8 @@ import static com.insurance.policy.domain.policy.PolicyFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.insurance.policy.application.policy.PolicyCommandService;
 import com.insurance.policy.application.port.out.PolicyRepository;
 import com.insurance.policy.domain.policy.CoverageTerms;
@@ -257,7 +259,7 @@ class PolicyBitemporalIntegrationTest extends IntegrationTestBase {
                     """, POLICY_NO.value()))
                     .as("과거를 수정하면 claims의 판단을 재현할 수 없게 된다")
                     .isInstanceOf(Exception.class)
-                    .hasMessageContaining("superseded_at 외에는 수정할 수 없습니다");
+                    .hasMessageContaining("대체 마킹 외에는 수정할 수 없습니다");
         }
 
         @Test
@@ -366,8 +368,13 @@ class PolicyBitemporalIntegrationTest extends IntegrationTestBase {
             assertThat(row.get("aggregate_type")).isEqualTo("Policy");
             assertThat(row.get("partition_key")).isEqualTo(POLICY_NO.value());
             assertThat(row.get("status")).isEqualTo("PENDING");
+            // envelope 은 jsonb 다. PostgreSQL 이 정규화하므로 문자열 비교는 틀린 방법이다.
+            JsonNode envelope = readEnvelope((String) row.get("envelope"));
+            assertThat(envelope.get("producer").asText()).isEqualTo("business-support");
+            assertThat(envelope.get("payload").get("hasExclusions").asBoolean()).isTrue();
+
+            // 민감정보는 문자열 전체에서 확인한다 — 어느 키에 숨어 있든 나가면 안 된다.
             assertThat((String) row.get("envelope"))
-                    .contains("\"producer\":\"business-support\"")
                     .as("부담보 상세(KCD 범위)는 이벤트에 싣지 않는다 — 건강정보 추론 가능")
                     .doesNotContain("M40-M54");
         }
@@ -387,9 +394,23 @@ class PolicyBitemporalIntegrationTest extends IntegrationTestBase {
                     """, POLICY_NO.value());
 
             assertThat(row.get("event_type")).isEqualTo("policy.corrected");
-            assertThat((String) row.get("envelope"))
-                    .contains("\"scopeValidFrom\":\"2026-01-01\"")
-                    .contains("\"approvedBy\":\"UW-MGR\"");
+            JsonNode payload = readEnvelope((String) row.get("envelope")).get("payload");
+            assertThat(payload.get("scopeValidFrom").asText()).isEqualTo("2026-01-01");
+            assertThat(payload.get("approvedBy").asText())
+                    .as("과거를 바꾸는 행위이므로 승인자가 이벤트에도 남는다")
+                    .isEqualTo("UW-MGR");
+            assertThat(payload.get("previousSnapshotVersion").asInt()).isEqualTo(1);
+            assertThat(payload.get("newSnapshotVersion").asInt())
+                    .as("정정만 스냅샷 버전을 올린다")
+                    .isEqualTo(2);
+        }
+    }
+
+    private JsonNode readEnvelope(String json) {
+        try {
+            return new ObjectMapper().readTree(json);
+        } catch (Exception e) {
+            throw new AssertionError("봉투 JSON을 읽을 수 없습니다: " + json, e);
         }
     }
 

@@ -166,7 +166,10 @@ CREATE TABLE exclusion_version (
     change_type   VARCHAR(16)  NOT NULL,
 
     CONSTRAINT exclusion_version_range CHECK (valid_from < valid_to),
-    CONSTRAINT exclusion_needs_kcd CHECK (array_length(kcd_ranges, 1) >= 1),
+    -- cardinality() 를 쓴다. array_length('{}', 1) 은 0 이 아니라 NULL 을 돌려주고,
+    -- CHECK 는 NULL 을 통과시키므로 array_length 로 쓴 이 제약은 아무것도 막지 못했다.
+    -- 범위 없는 부담보는 claims 가 판정할 수 없어 심사가 멈춘다.
+    CONSTRAINT exclusion_needs_kcd CHECK (cardinality(kcd_ranges) >= 1),
     CONSTRAINT exclusion_version_type
         CHECK (type IN ('BODY_PART', 'DISEASE', 'KCD_RANGE')),
     CONSTRAINT exclusion_version_change_type

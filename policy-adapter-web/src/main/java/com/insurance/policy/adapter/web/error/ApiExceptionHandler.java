@@ -6,13 +6,17 @@ import com.insurance.policy.domain.policy.exception.SnapshotNotAvailableExceptio
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.method.ParameterValidationResult;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
@@ -52,6 +56,26 @@ public class ApiExceptionHandler {
                 .body(ErrorResponse.of(409, "POLICY_ILLEGAL_TRANSITION", ex.getMessage()));
     }
 
+    /**
+     * ★ 인가 거부 → 403 (500이 아니다).
+     *
+     * <p>{@code @PreAuthorize}가 거부하면 {@link AuthorizationDeniedException}이
+     * 핸들러 메서드 밖으로 던져져 이 어드바이스까지 온다. 아래 catch-all이 먼저
+     * 잡으면 <b>모든 권한 거부가 500으로 나간다</b> — 클라이언트는 자기 권한이 없는 건지
+     * 서버가 고장난 건지 알 수 없고, 오류 대시보드도 못 쓰게 된다.
+     *
+     * <p>인증 자체가 없는 경우는 여기까지 오지 않는다. 필터 체인이 먼저 401로 끊는다.
+     *
+     * <p>사유를 응답에 담지 않는다. "어떤 권한이 없어서 막혔는지"는 권한 구조를 알려주는
+     * 정보다. 진단은 로그로 한다.
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AuthorizationDeniedException ex) {
+        log.warn("인가 거부: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(403, "ACCESS_DENIED", "권한이 없습니다."));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
         List<ErrorResponse.FieldError> details = ex.getBindingResult().getFieldErrors().stream()
@@ -60,6 +84,35 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(ErrorResponse.of(400, "VALIDATION_FAILED",
                         "요청 값이 올바르지 않습니다.", details));
+    }
+
+    /**
+     * 메서드 파라미터 검증 실패 → 400.
+     *
+     * <p>Spring 6.1부터 {@code @PathVariable}·{@code @RequestParam}에 붙은 제약과
+     * 중첩 {@code @Valid} 위반이 {@link MethodArgumentNotValidException}이 아니라
+     * 이 예외로 온다. 둘 다 다루지 않으면 검증 실패가 500으로 나간다.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponse> handleMethodValidation(
+            HandlerMethodValidationException ex) {
+        List<ErrorResponse.FieldError> details = ex.getAllValidationResults().stream()
+                .flatMap(result -> result.getResolvableErrors().stream()
+                        .map(error -> new ErrorResponse.FieldError(
+                                fieldNameOf(result, error), error.getDefaultMessage())))
+                .toList();
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.of(400, "VALIDATION_FAILED",
+                        "요청 값이 올바르지 않습니다.", details));
+    }
+
+    /** 필드 위반이면 그 필드명을, 아니면 파라미터명을 쓴다. */
+    private String fieldNameOf(ParameterValidationResult result, MessageSourceResolvable error) {
+        if (error instanceof FieldError fieldError) {
+            return fieldError.getField();
+        }
+        String parameterName = result.getMethodParameter().getParameterName();
+        return parameterName == null ? "request" : parameterName;
     }
 
     @ExceptionHandler({MissingServletRequestParameterException.class,
