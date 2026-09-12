@@ -96,17 +96,45 @@ public class OutboxEventEntity {
                 aggregateId, partitionKey, envelope, occurredAt);
     }
 
-    /** 릴레이가 발행에 성공했을 때 호출한다 (Phase 4). */
+    /** 릴레이가 발행에 성공했을 때 호출한다. */
     public void markPublished(Instant at) {
         this.status = STATUS_PUBLISHED;
         this.publishedAt = at;
         this.lastError = null;
     }
 
-    /** 발행 실패. 재시도 횟수를 누적하고 마지막 오류를 남긴다 (Phase 4). */
+    /**
+     * 발행 실패. 재시도 횟수를 누적하고 마지막 오류를 남긴다.
+     *
+     * <p>{@code PENDING}을 유지하므로 다음 폴링에서 다시 시도된다.
+     */
     public void markFailed(String error) {
         this.attempts += 1;
-        this.lastError = error;
+        this.lastError = truncate(error);
+    }
+
+    /**
+     * 재시도 한도를 넘겼다. 더 이상 자동으로 시도하지 않는다.
+     *
+     * <p><b>이 애그리거트의 이후 이벤트도 함께 멈춘다.</b> 릴레이 쿼리가 {@code FAILED}를
+     * 차단 조건에 넣기 때문이다. 건너뛰고 다음 것을 내보내면 순서가 조용히 깨지는데,
+     * 계약 이벤트에서 그것은 claims의 잘못된 재심사나 잘못된 지급으로 이어진다.
+     * 막힌 채로 알람이 울리는 편이 낫다.
+     *
+     * <p>운영자가 원인을 고친 뒤 {@code PENDING}으로 되돌리면 순서대로 다시 흐른다.
+     */
+    public void markDeadLettered(String error) {
+        this.attempts += 1;
+        this.lastError = truncate(error);
+        this.status = STATUS_FAILED;
+    }
+
+    /** 오류 메시지가 무한정 길어지지 않게 자른다. 스택트레이스는 로그에 남는다. */
+    private static String truncate(String error) {
+        if (error == null) {
+            return null;
+        }
+        return error.length() <= 1000 ? error : error.substring(0, 1000) + "…(생략)";
     }
 
     public Long getId() {

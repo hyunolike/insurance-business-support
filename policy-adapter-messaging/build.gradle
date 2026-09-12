@@ -1,9 +1,12 @@
 // policy-adapter-messaging : Kafka, Outbox 릴레이 (Phase 1)
 dependencies {
     implementation project(':policy-application')
-    implementation project(':policy-adapter-persistence')
+    // 영속성 어댑터에 의존하지 않는다. 릴레이는 OutboxStore 포트만 알면 되고,
+    // 그래야 메시징이 JPA 엔티티를 만지지 않는다.
 
     implementation 'org.springframework.kafka:spring-kafka'
+    implementation 'org.springframework:spring-tx'
+    implementation 'org.springframework.boot:spring-boot-autoconfigure'
     implementation 'org.springframework.boot:spring-boot-starter-json'
 
     compileOnly libs.lombok

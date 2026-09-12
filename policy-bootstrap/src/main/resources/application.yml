@@ -42,6 +42,16 @@ spring:
 
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      # acks=all 이 아니면 리더만 받고 응답한다. 리더 장애 시 이벤트가 사라지는데
+      # 릴레이는 이미 PUBLISHED 로 표시한 뒤다 — Outbox 를 둔 의미가 없어진다.
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 1   # 재시도 시 순서 역전 방지
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP:business-support}
       auto-offset-reset: earliest
@@ -77,8 +87,16 @@ policy:
     window: ${REINSTATEMENT_WINDOW:P3Y}
 
   outbox:
-    relay-batch-size: ${OUTBOX_RELAY_BATCH_SIZE:100}
-    relay-interval: ${OUTBOX_RELAY_INTERVAL:PT0.5S}
+    relay:
+      # 릴레이는 운영에서만 돈다. 통합 테스트는 브로커 없이 relayOnce() 를 직접 부른다.
+      enabled: ${OUTBOX_RELAY_ENABLED:true}
+      publisher: ${OUTBOX_RELAY_PUBLISHER:kafka}
+      batch-size: ${OUTBOX_RELAY_BATCH_SIZE:100}
+      max-attempts: ${OUTBOX_RELAY_MAX_ATTEMPTS:5}
+      # 폴링 간격(ms). 계약 이벤트는 초 단위 지연이 문제가 되지 않는다.
+      fixed-delay: ${OUTBOX_RELAY_FIXED_DELAY:1000}
+      # 기동 직후에는 마이그레이션·커넥션 풀 준비가 끝나길 기다린다.
+      initial-delay: ${OUTBOX_RELAY_INITIAL_DELAY:5000}
 
 management:
   endpoints:
