@@ -320,6 +320,9 @@ class OutboxRelayIntegrationTest extends IntegrationTestBase {
     /** 브로커 대신 기록한다. 실패를 시킬 수 있다. */
     static class RecordingEventPublisher implements EventPublisher {
 
+        private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+
         private final List<Sent> sent = new CopyOnWriteArrayList<>();
         private int failuresRemaining;
 
@@ -345,12 +348,21 @@ class OutboxRelayIntegrationTest extends IntegrationTestBase {
             return List.copyOf(sent);
         }
 
-        /** 발행된 eventId를 순서대로. 순서 검증용. */
+        /**
+         * 발행된 eventId를 순서대로. 순서 검증용.
+         *
+         * <p>문자열을 잘라 쓰지 않는다. envelope 은 {@code jsonb} 컬럼에서 나오므로
+         * PostgreSQL이 정규화한 형태다 — 콜론 뒤에 공백이 붙고 키 순서도 바뀐다.
+         * {@code "eventId":"} 로 찾으면 아무것도 못 찾는다. 실제로 그렇게 짰다가 깨졌다.
+         */
         List<String> sentEnvelopes() {
             List<String> ids = new ArrayList<>();
             for (Sent s : sent) {
-                int start = s.envelope().indexOf("\"eventId\":\"") + 11;
-                ids.add(s.envelope().substring(start, s.envelope().indexOf('"', start)));
+                try {
+                    ids.add(MAPPER.readTree(s.envelope()).get("eventId").asText());
+                } catch (Exception e) {
+                    throw new AssertionError("봉투 JSON을 읽을 수 없습니다: " + s.envelope(), e);
+                }
             }
             return ids;
         }
