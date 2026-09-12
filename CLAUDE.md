@@ -10,7 +10,7 @@ Claude Code(claude.ai/code)가 이 저장소에서 작업할 때 참고하는 �
 - 짝 저장소: `hyunolike/insurance-claims-platform` (실손의료보험 청구 심사)
 - 스택: Java 21 LTS, Spring Boot 3.x, PostgreSQL 15, Kafka, Redis
 - 아키텍처: DDD + 헥사고날, Gradle 멀티모듈, **Bitemporal 이력**, Transactional Outbox
-- **현재 상태: Phase 1 진행 중. 도메인·영속성·스냅샷 API 완료, 조회/변경 컨트롤러·릴레이·시드·계약 테스트 남음**
+- **현재 상태: Phase 1 마무리. 도메인·영속성·API·릴레이·시드·계약 테스트 완료. Redis 캐시만 후순위로 남음**
 
 ## 작업 전 반드시 읽을 것
 
@@ -135,15 +135,16 @@ feat · fix · docs · refactor · test · chore
 
 ```
 Phase 0  골격 (멀티모듈, ArchUnit, Testcontainers, CI, btree_gist)   ☑ 완료
-Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열쇠        🔨 진행 중
+Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열쇠        🔨 마무리 중
            ☑ Policy 애그리거트 + snapshotAsOf(asOf, knownAt)
            ☑ Bitemporal 스키마 (V3) + EXCLUDE 제약 + 이력 불변 트리거
            ☑ PolicyJdbcRepository (INSERT 전용, superseded_at만 예외)
            ☑ GET /policies/{no}/snapshot + 체크섬
-           ☐ GET /policies/{no} · /history
-           ☐ POST /endorsements · /corrections 컨트롤러 (서비스는 완료)
-           ☐ Outbox 폴링 릴레이 + Kafka 발행
-           ☐ 테스트 데이터 시드 · 계약 테스트
+           ☑ GET /policies/{no} · /history
+           ☑ POST /endorsements · /corrections 컨트롤러
+           ☑ Outbox 폴링 릴레이 (애그리거트 내 순서 보장) + Kafka 발행
+           ☑ 테스트 데이터 시드 (SEED-0001~0004)
+           ☑ 계약 테스트 (contractTest — 양쪽 레포가 같은 바이트열에 고정)
            ☐ Redis 캐시 (성능 최적화, 후순위)
 Phase 5  청약 + 언더라이팅                                            ☐
 Phase 6  운영 강화 (감사, 관측성, 부하 테스트)                        ☐

@@ -34,6 +34,9 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: false
+    # ★ 시드(db/seed)는 기본 경로에 없다. 마이그레이션에 섞으면 운영 DB 에
+    #   가짜 계약이 들어간다. local 프로파일에서만 아래에서 추가한다.
+    locations: classpath:db/migration
 
   data:
     redis:
@@ -116,3 +119,23 @@ logging:
   level:
     root: INFO
     com.insurance.policy: ${LOG_LEVEL:INFO}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# local — 로컬 개발 및 claims 연동 확인용
+#
+# 시드 4건이 들어간다. claims 의 골든 케이스가 이 계약번호를 참조한다.
+#   P2026-SEED-0001  정상 4세대 실손
+#   P2026-SEED-0002  척추 부담보 (M40-M54, 5년)   → D-POL-004 부지급 경로
+#   P2026-SEED-0003  유예 후 실효                 → 사고일 시점 상태 판정
+#   P2026-SEED-0004  정정 이력 있음               → ★ 같은 asOf, 다른 knownAt
+#
+#   ./gradlew :policy-bootstrap:bootRun --args='--spring.profiles.active=local'
+# ─────────────────────────────────────────────────────────────────────────────
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed
