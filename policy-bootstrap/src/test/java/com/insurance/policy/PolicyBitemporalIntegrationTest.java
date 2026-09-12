@@ -51,12 +51,15 @@ class PolicyBitemporalIntegrationTest extends IntegrationTestBase {
     @BeforeEach
     void setUp() {
         jdbc = new JdbcTemplate(dataSource);
-        jdbc.update("DELETE FROM correction_log");
-        jdbc.update("DELETE FROM exclusion_version");
-        jdbc.update("DELETE FROM coverage_version");
-        jdbc.update("DELETE FROM policy_version");
-        jdbc.update("DELETE FROM policy");
-        jdbc.update("DELETE FROM outbox_event");
+        // DELETE 로는 초기화할 수 없다. 이력 테이블과 correction_log 는 append-only 라
+        // 삭제가 막혀 있고(트리거가 예외를 던진다), FK 때문에 policy 도 지워지지 않는다.
+        // TRUNCATE 는 행 트리거를 타지 않으므로 픽스처 초기화에 쓴다 —
+        // 애플리케이션 코드가 이 경로를 쓰는 일은 없어야 한다.
+        jdbc.execute("""
+                TRUNCATE correction_log, exclusion_version, coverage_version,
+                         policy_version, policy, outbox_event
+                RESTART IDENTITY CASCADE
+                """);
     }
 
     private void 부담보계약저장() {
@@ -316,21 +319,31 @@ class PolicyBitemporalIntegrationTest extends IntegrationTestBase {
         }
 
         @Test
-        @DisplayName("정정 이력은 수정·삭제할 수 없다")
+        @DisplayName("정정 이력은 수정·삭제할 수 없다 — 조용히 무시가 아니라 예외")
         void shouldMakeCorrectionLogImmutable() {
             부담보계약저장();
             commandService.correctExclusion(new PolicyCommandService.CorrectExclusionCommand(
                     POLICY_NO, 척추부담보, null, "착오", "UW-0007", "UW-MGR"));
 
-            jdbc.update("UPDATE correction_log SET reason = '변조' WHERE policy_no = ?",
-                    POLICY_NO.value());
-            jdbc.update("DELETE FROM correction_log WHERE policy_no = ?", POLICY_NO.value());
+            // 조용히 무시(RULE ... DO INSTEAD NOTHING)면 정리 스크립트를 돌린 운영자도,
+            // 버그가 있는 배치도 삭제에 성공했다고 믿는다. 감사 기록에서는 시끄러운 실패가 옳다.
+            assertThatThrownBy(() ->
+                    jdbc.update("UPDATE correction_log SET reason = '변조' WHERE policy_no = ?",
+                            POLICY_NO.value()))
+                    .as("수정 시도는 예외로 거부된다")
+                    .isInstanceOf(Exception.class)
+                    .hasMessageContaining("정정 이력은 수정·삭제할 수 없습니다");
+
+            assertThatThrownBy(() ->
+                    jdbc.update("DELETE FROM correction_log WHERE policy_no = ?",
+                            POLICY_NO.value()))
+                    .as("삭제 시도도 예외로 거부된다")
+                    .isInstanceOf(Exception.class)
+                    .hasMessageContaining("정정 이력은 수정·삭제할 수 없습니다");
 
             var row = jdbc.queryForMap(
                     "SELECT reason FROM correction_log WHERE policy_no = ?", POLICY_NO.value());
-            assertThat(row.get("reason"))
-                    .as("RULE ... DO INSTEAD NOTHING 이 조용히 무시한다")
-                    .isEqualTo("착오");
+            assertThat(row.get("reason")).isEqualTo("착오");
         }
     }
 

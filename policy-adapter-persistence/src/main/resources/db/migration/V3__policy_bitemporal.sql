@@ -253,9 +253,29 @@ CREATE TRIGGER exclusion_version_immutable
     BEFORE UPDATE ON exclusion_version
     FOR EACH ROW EXECUTE FUNCTION reject_history_mutation();
 
--- 정정 이력은 아예 수정·삭제할 수 없다
-CREATE RULE correction_log_no_update AS ON UPDATE TO correction_log DO INSTEAD NOTHING;
-CREATE RULE correction_log_no_delete AS ON DELETE TO correction_log DO INSTEAD NOTHING;
+-- 정정 이력은 아예 수정·삭제할 수 없다.
+--
+-- RULE ... DO INSTEAD NOTHING 을 쓰지 않는 이유: 그쪽은 UPDATE/DELETE 를 조용히
+-- 삼키고 "0 rows" 를 돌려준다. 감사 기록에서 이것은 예외보다 나쁘다 —
+-- 정리 스크립트를 돌린 운영자도, 버그가 있는 배치도 삭제에 성공했다고 믿는다.
+-- 게다가 "한 건도 안 지워졌다" 와 "막혔다" 를 구분할 방법이 없다.
+-- 다른 이력 테이블과 같이 예외를 던져 시끄럽게 실패시킨다.
+--
+-- TRUNCATE 는 트리거를 타지 않으므로 이 보호를 우회한다. 운영 DB 에서는
+-- 애플리케이션 롤에 TRUNCATE 권한을 주지 않는 것으로 막고(배포 시 권한 설정),
+-- 테스트 픽스처는 의도적으로 TRUNCATE 로 초기화한다.
+CREATE OR REPLACE FUNCTION reject_correction_log_mutation() RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION
+        '정정 이력은 수정·삭제할 수 없습니다 (operation=%). '
+        '잘못 기록된 정정은 지우는 것이 아니라 되돌리는 정정을 새로 남깁니다.',
+        TG_OP;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER correction_log_append_only
+    BEFORE UPDATE OR DELETE ON correction_log
+    FOR EACH ROW EXECUTE FUNCTION reject_correction_log_mutation();
 
 
 -- ─── 계약번호 시퀀스 ─────────────────────────────────────────────────────────
