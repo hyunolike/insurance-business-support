@@ -56,7 +56,10 @@ cmake-build-*/
 *.iws
 
 # IntelliJ
-out/
+# 반드시 루트 기준으로 고정한다. `out/` 로 두면 헥사고날의
+# port/out/ 패키지가 통째로 커밋에서 빠진다 (실제로 빠졌었다).
+/out/
+*/out/
 
 # mpeltonen/sbt-idea plugin
 .idea_modules/
