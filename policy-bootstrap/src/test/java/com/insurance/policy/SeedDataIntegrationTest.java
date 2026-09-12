@@ -55,7 +55,7 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
      */
     @BeforeEach
     void ensureSeedLoaded() throws Exception {
-        if (policyRepository.exists(PolicyNo.of("P2026-SEED-0001"))) {
+        if (policyRepository.exists(PolicyNo.of("P2026-9000001"))) {
             return;
         }
         String sql;
@@ -83,7 +83,7 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("담보 3종이 올라오고 조건이 정확하다")
         void shouldLoadStandardPolicy() {
-            var s = snapshot("P2026-SEED-0001", 사고일, 지금);
+            var s = snapshot("P2026-9000001", 사고일, 지금);
 
             assertThat(s.policyStatusAsOf()).isEqualTo(PolicyStatus.IN_FORCE);
             assertThat(s.coverages()).hasSize(3);
@@ -106,7 +106,7 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("★ M51.2(요추 추간판탈출)가 부담보 범위에 든다 — claims 부지급 근거")
         void shouldCoverKcdRangeForDenial() {
-            var s = snapshot("P2026-SEED-0002", 사고일, 지금);
+            var s = snapshot("P2026-9000002", 사고일, 지금);
 
             assertThat(s.exclusions()).singleElement().satisfies(e -> {
                 assertThat(e.kcdRanges()).containsExactly(KcdRange.parse("M40-M54"));
@@ -122,7 +122,7 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("범위 밖 상병은 부담보에 걸리지 않는다")
         void shouldNotMatchOutsideRange() {
-            var s = snapshot("P2026-SEED-0002", 사고일, 지금);
+            var s = snapshot("P2026-9000002", 사고일, 지금);
 
             assertThat(s.exclusionsMatching("J00"))
                     .as("감기는 척추 부담보와 무관하다")
@@ -137,15 +137,15 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("사고일이 어느 구간이냐로 계약상태가 갈린다")
         void shouldResolveStatusByAccidentDate() {
-            assertThat(snapshot("P2026-SEED-0003", LocalDate.of(2026, 1, 15), 지금)
+            assertThat(snapshot("P2026-9000003", LocalDate.of(2026, 1, 15), 지금)
                     .policyStatusAsOf()).isEqualTo(PolicyStatus.IN_FORCE);
 
-            assertThat(snapshot("P2026-SEED-0003", LocalDate.of(2026, 3, 1), 지금)
+            assertThat(snapshot("P2026-9000003", LocalDate.of(2026, 3, 1), 지금)
                     .policyStatusAsOf())
                     .as("납입최고 중에도 보장은 유지된다")
                     .isEqualTo(PolicyStatus.GRACE);
 
-            assertThat(snapshot("P2026-SEED-0003", LocalDate.of(2026, 5, 1), 지금)
+            assertThat(snapshot("P2026-9000003", LocalDate.of(2026, 5, 1), 지금)
                     .policyStatusAsOf())
                     .as("실효 이후 사고는 부지급")
                     .isEqualTo(PolicyStatus.LAPSED);
@@ -159,8 +159,8 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("★★ 같은 사고일인데 조회 시점에 따라 답이 다르다")
         void shouldReproduceBothTruths() {
-            var 정정전 = snapshot("P2026-SEED-0004", 사고일, 정정직전);
-            var 정정후 = snapshot("P2026-SEED-0004", 사고일, 지금);
+            var 정정전 = snapshot("P2026-9000004", 사고일, 정정직전);
+            var 정정후 = snapshot("P2026-9000004", 사고일, 지금);
 
             assertThat(정정전.exclusions())
                     .as("4월에 우리가 알던 진실 — 이 부담보로 부지급했다")
@@ -176,9 +176,9 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @Test
         @DisplayName("정정은 스냅샷 버전을 올린다 — 변경은 올리지 않는다")
         void shouldBumpSnapshotVersionOnCorrection() {
-            assertThat(snapshot("P2026-SEED-0004", 사고일, 정정직전).snapshotVersion())
+            assertThat(snapshot("P2026-9000004", 사고일, 정정직전).snapshotVersion())
                     .isEqualTo(1);
-            assertThat(snapshot("P2026-SEED-0004", 사고일, 지금).snapshotVersion())
+            assertThat(snapshot("P2026-9000004", 사고일, 지금).snapshotVersion())
                     .as("claims 는 버전이 오른 것을 보고 재심사 대상임을 안다")
                     .isEqualTo(2);
         }
@@ -187,7 +187,7 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         @DisplayName("정정 기록이 승인자와 함께 남아 있다")
         void shouldRecordApprover() {
             var history = policyRepository.findChangeHistory(
-                    PolicyNo.of("P2026-SEED-0004"), "EXCLUSION");
+                    PolicyNo.of("P2026-9000004"), "EXCLUSION");
 
             assertThat(history)
                     .as("정정으로 무효화된 기록도 이력에 보여야 한다")
@@ -201,8 +201,8 @@ class SeedDataIntegrationTest extends IntegrationTestBase {
         // Flyway 가 이미 한 번 올렸다. 시드 스크립트의 앞선 EXISTS 가드가 없으면
         // EXCLUDE 겹침 방지 제약에 걸려 두 번째 실행이 실패한다.
         // 여기서는 로드가 성공했고 계약이 4건 그대로인지만 확인한다.
-        for (String no : new String[]{"P2026-SEED-0001", "P2026-SEED-0002",
-                "P2026-SEED-0003", "P2026-SEED-0004"}) {
+        for (String no : new String[]{"P2026-9000001", "P2026-9000002",
+                "P2026-9000003", "P2026-9000004"}) {
             assertThat(policyRepository.exists(PolicyNo.of(no)))
                     .as("%s 가 없다", no)
                     .isTrue();

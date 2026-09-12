@@ -11,10 +11,16 @@
 --   그래서 맨 앞에서 이미 있으면 빠져나간다.
 --
 -- 네 가지 계약은 claims 의 골든 케이스와 이 저장소의 Bitemporal 검증을 위한 것이다.
---   SEED-0001  정상 4세대 실손            → 정상 지급 경로
---   SEED-0002  척추 부담보 (M40-M54, 5년)  → D-POL-004 부지급 경로
---   SEED-0003  유예 후 실효                → 사고일 시점 계약상태 판정
---   SEED-0004  정정 이력 있음              → ★ 같은 asOf, 다른 knownAt
+--   P2026-9000001  정상 4세대 실손            → 정상 지급 경로
+--   P2026-9000002  척추 부담보 (M40-M54, 5년)  → D-POL-004 부지급 경로
+--   P2026-9000003  유예 후 실효                → 사고일 시점 계약상태 판정
+--   P2026-9000004  정정 이력 있음              → ★ 같은 asOf, 다른 knownAt
+--
+-- ★ 일련번호를 9000001 부터 쓴다.
+--   계약번호는 PolicyNo 가 P{연도}-{7자리} 형식을 강제하므로 'SEED' 같은 문자를
+--   넣을 수 없다(실제로 그렇게 짰다가 도메인이 거부했다). 대신 시퀀스가 발급하는
+--   대역(1부터 증가)과 겹치지 않는 9백만대를 쓴다 — 번호만 보고 시드임을 알 수 있고
+--   실제 발급 번호와 충돌하지 않는다.
 --
 -- docs/design/08-roadmap.md 1-21 ~ 1-24
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -27,7 +33,7 @@ DECLARE
     t_실효    CONSTANT TIMESTAMPTZ := '2026-04-01T00:00:00Z';
 BEGIN
 
-IF EXISTS (SELECT 1 FROM policy WHERE policy_no = 'P2026-SEED-0001') THEN
+IF EXISTS (SELECT 1 FROM policy WHERE policy_no = 'P2026-9000001') THEN
     RAISE NOTICE '시드가 이미 로드되어 있습니다. 건너뜁니다.';
     RETURN;
 END IF;
@@ -36,13 +42,13 @@ END IF;
 INSERT INTO policy (policy_no, product_code, product_name, generation,
         holder_ref, insured_ref, insured_birth_year, relation_to_holder,
         period_from, period_to, effective_date, application_no, uw_case_no)
-VALUES ('P2026-SEED-0001', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
+VALUES ('P2026-9000001', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
         'HOLDER-SEED-01', 'CI-seed0001', 1988, 'SELF',
         '2026-01-01', '2031-01-01', '2026-01-01', 'A2026-SEED-0001', 'U-2026-SEED-01');
 
 INSERT INTO policy_version (policy_no, status, valid_from, valid_to,
         recorded_at, change_type, reason, actor_ref)
-VALUES ('P2026-SEED-0001', 'IN_FORCE', '2026-01-01', '2031-01-01',
+VALUES ('P2026-9000001', 'IN_FORCE', '2026-01-01', '2031-01-01',
         t_최초, 'CREATE', '계약 성립', 'SEED');
 
 INSERT INTO coverage_version (policy_no, coverage_code, coverage_name, benefit_category,
@@ -50,14 +56,14 @@ INSERT INTO coverage_version (policy_no, coverage_code, coverage_name, benefit_c
         min_deductible_by_grade, annual_limit, per_visit_limit, annual_count_limit,
         valid_from, valid_to, recorded_at, change_type)
 VALUES
-    ('P2026-SEED-0001', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
+    ('P2026-9000001', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
      ARRAY['INPATIENT'], 50000000, 0.2000, NULL, NULL, 50000000, NULL, NULL,
      '2026-01-01', '2031-01-01', t_최초, 'CREATE'),
-    ('P2026-SEED-0001', 'COV-OUTP-COVERED', '급여 통원의료비', 'COVERED',
+    ('P2026-9000001', 'COV-OUTP-COVERED', '급여 통원의료비', 'COVERED',
      ARRAY['OUTPATIENT'], 200000, 0.2000, NULL,
      '{"CLINIC":10000,"HOSPITAL":15000,"GENERAL":15000,"TERTIARY":20000}'::jsonb,
      NULL, 200000, 100, '2026-01-01', '2031-01-01', t_최초, 'CREATE'),
-    ('P2026-SEED-0001', 'COV-OUTP-UNCOVERED', '비급여 통원의료비', 'UNCOVERED',
+    ('P2026-9000001', 'COV-OUTP-UNCOVERED', '비급여 통원의료비', 'UNCOVERED',
      ARRAY['OUTPATIENT'], 200000, 0.3000, 30000, NULL,
      NULL, 200000, 100, '2026-01-01', '2031-01-01', t_최초, 'CREATE');
 
@@ -66,13 +72,13 @@ VALUES
 INSERT INTO policy (policy_no, product_code, product_name, generation,
         holder_ref, insured_ref, insured_birth_year, relation_to_holder,
         period_from, period_to, effective_date, application_no, uw_case_no)
-VALUES ('P2026-SEED-0002', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
+VALUES ('P2026-9000002', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
         'HOLDER-SEED-02', 'CI-seed0002', 1979, 'SELF',
         '2026-01-01', '2031-01-01', '2026-01-01', 'A2026-SEED-0002', 'U-2026-SEED-02');
 
 INSERT INTO policy_version (policy_no, status, valid_from, valid_to,
         recorded_at, change_type, reason, actor_ref)
-VALUES ('P2026-SEED-0002', 'IN_FORCE', '2026-01-01', '2031-01-01',
+VALUES ('P2026-9000002', 'IN_FORCE', '2026-01-01', '2031-01-01',
         t_최초, 'CREATE', '계약 성립', 'SEED');
 
 INSERT INTO coverage_version (policy_no, coverage_code, coverage_name, benefit_category,
@@ -80,10 +86,10 @@ INSERT INTO coverage_version (policy_no, coverage_code, coverage_name, benefit_c
         min_deductible_by_grade, annual_limit, per_visit_limit, annual_count_limit,
         valid_from, valid_to, recorded_at, change_type)
 VALUES
-    ('P2026-SEED-0002', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
+    ('P2026-9000002', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
      ARRAY['INPATIENT'], 50000000, 0.2000, NULL, NULL, 50000000, NULL, NULL,
      '2026-01-01', '2031-01-01', t_최초, 'CREATE'),
-    ('P2026-SEED-0002', 'COV-OUTP-COVERED', '급여 통원의료비', 'COVERED',
+    ('P2026-9000002', 'COV-OUTP-COVERED', '급여 통원의료비', 'COVERED',
      ARRAY['OUTPATIENT'], 200000, 0.2000, NULL,
      '{"CLINIC":10000,"HOSPITAL":15000,"GENERAL":15000,"TERTIARY":20000}'::jsonb,
      NULL, 200000, 100, '2026-01-01', '2031-01-01', t_최초, 'CREATE');
@@ -92,7 +98,7 @@ VALUES
 -- 2031-01-01 사고는 부담보가 풀린 상태라는 것이 claims 쪽 경계 케이스다.
 INSERT INTO exclusion_version (policy_no, exclusion_id, type, target, kcd_ranges,
         reason, uw_case_no, valid_from, valid_to, recorded_at, change_type)
-VALUES ('P2026-SEED-0002', 'EXC-2026-SEED-02', 'BODY_PART', '척추 및 그 부속기관',
+VALUES ('P2026-9000002', 'EXC-2026-900002', 'BODY_PART', '척추 및 그 부속기관',
         ARRAY['M40-M54'], '5년 내 수술 이력', 'U-2026-SEED-02',
         '2026-01-01', '2031-01-01', t_최초, 'CREATE');
 
@@ -104,25 +110,25 @@ VALUES ('P2026-SEED-0002', 'EXC-2026-SEED-02', 'BODY_PART', '척추 및 그 부�
 INSERT INTO policy (policy_no, product_code, product_name, generation,
         holder_ref, insured_ref, insured_birth_year, relation_to_holder,
         period_from, period_to, effective_date, application_no, uw_case_no)
-VALUES ('P2026-SEED-0003', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
+VALUES ('P2026-9000003', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
         'HOLDER-SEED-03', 'CI-seed0003', 1995, 'SELF',
         '2026-01-01', '2031-01-01', '2026-01-01', 'A2026-SEED-0003', 'U-2026-SEED-03');
 
 INSERT INTO policy_version (policy_no, status, valid_from, valid_to,
         recorded_at, change_type, reason, actor_ref)
 VALUES
-    ('P2026-SEED-0003', 'IN_FORCE', '2026-01-01', '2026-02-01',
+    ('P2026-9000003', 'IN_FORCE', '2026-01-01', '2026-02-01',
      t_최초, 'CREATE', '계약 성립', 'SEED'),
-    ('P2026-SEED-0003', 'GRACE', '2026-02-01', '2026-04-01',
+    ('P2026-9000003', 'GRACE', '2026-02-01', '2026-04-01',
      t_최초, 'ENDORSEMENT', '보험료 미납 — 납입최고 발송', 'BATCH-PREMIUM'),
     -- 최고 발송 기록 없이 실효시키지 않는다(절대 규칙 12). 위 GRACE 구간이 그 기록이다.
-    ('P2026-SEED-0003', 'LAPSED', '2026-04-01', '2031-01-01',
+    ('P2026-9000003', 'LAPSED', '2026-04-01', '2031-01-01',
      t_실효, 'ENDORSEMENT', '납입최고 기간 경과', 'BATCH-PREMIUM');
 
 INSERT INTO coverage_version (policy_no, coverage_code, coverage_name, benefit_category,
         treatment_types, insured_amount, coinsurance_rate, annual_limit,
         valid_from, valid_to, recorded_at, change_type)
-VALUES ('P2026-SEED-0003', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
+VALUES ('P2026-9000003', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
         ARRAY['INPATIENT'], 50000000, 0.2000, 50000000,
         '2026-01-01', '2031-01-01', t_최초, 'CREATE');
 
@@ -137,19 +143,19 @@ VALUES ('P2026-SEED-0003', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERE
 INSERT INTO policy (policy_no, product_code, product_name, generation,
         holder_ref, insured_ref, insured_birth_year, relation_to_holder,
         period_from, period_to, effective_date, application_no, uw_case_no)
-VALUES ('P2026-SEED-0004', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
+VALUES ('P2026-9000004', 'MED-INDEM-G4', '4세대 실손의료보험', 'G4',
         'HOLDER-SEED-04', 'CI-seed0004', 1983, 'SELF',
         '2026-01-01', '2031-01-01', '2026-01-01', 'A2026-SEED-0004', 'U-2026-SEED-04');
 
 INSERT INTO policy_version (policy_no, status, valid_from, valid_to,
         recorded_at, change_type, reason, actor_ref)
-VALUES ('P2026-SEED-0004', 'IN_FORCE', '2026-01-01', '2031-01-01',
+VALUES ('P2026-9000004', 'IN_FORCE', '2026-01-01', '2031-01-01',
         t_최초, 'CREATE', '계약 성립', 'SEED');
 
 INSERT INTO coverage_version (policy_no, coverage_code, coverage_name, benefit_category,
         treatment_types, insured_amount, coinsurance_rate, annual_limit,
         valid_from, valid_to, recorded_at, change_type)
-VALUES ('P2026-SEED-0004', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
+VALUES ('P2026-9000004', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERED',
         ARRAY['INPATIENT'], 50000000, 0.2000, 50000000,
         '2026-01-01', '2031-01-01', t_최초, 'CREATE');
 
@@ -159,18 +165,18 @@ VALUES ('P2026-SEED-0004', 'COV-INPT-COVERED', '급여 입원의료비', 'COVERE
 INSERT INTO exclusion_version (policy_no, exclusion_id, type, target, kcd_ranges,
         reason, uw_case_no, valid_from, valid_to,
         recorded_at, superseded_at, superseded_by_correction, change_type)
-VALUES ('P2026-SEED-0004', 'EXC-2026-SEED-04', 'BODY_PART', '무릎 및 그 부속기관',
+VALUES ('P2026-9000004', 'EXC-2026-900004', 'BODY_PART', '무릎 및 그 부속기관',
         ARRAY['M22-M23'], '착오 등록 (정정됨)', 'U-2026-SEED-04',
         '2026-01-01', '2031-01-01', t_최초, t_정정, TRUE, 'CREATE');
 
 INSERT INTO correction_log (policy_no, correction_type, affected_elements,
         scope_valid_from, scope_valid_to, previous_version, new_version,
         reason, requested_by, approved_by, corrected_at)
-VALUES ('P2026-SEED-0004', 'REMOVE_EXCLUSION', ARRAY['EXCLUSION'],
+VALUES ('P2026-9000004', 'REMOVE_EXCLUSION', ARRAY['EXCLUSION'],
         '2026-01-01', '2031-01-01', 1, 2,
         '인수심사 착오 — 타인의 고지사항이 잘못 반영됨',
         'UW-SEED-REQ', 'UW-SEED-MGR', t_정정);
 
-RAISE NOTICE '시드 4건 로드 완료 (SEED-0001~0004)';
+RAISE NOTICE '시드 4건 로드 완료 (P2026-9000001~9000004)';
 
 END $$;

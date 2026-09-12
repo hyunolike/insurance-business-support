@@ -143,7 +143,7 @@ Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열�
            ☑ GET /policies/{no} · /history
            ☑ POST /endorsements · /corrections 컨트롤러
            ☑ Outbox 폴링 릴레이 (애그리거트 내 순서 보장) + Kafka 발행
-           ☑ 테스트 데이터 시드 (SEED-0001~0004)
+           ☑ 테스트 데이터 시드 (P2026-9000001~9000004)
            ☑ 계약 테스트 (contractTest — 양쪽 레포가 같은 바이트열에 고정)
            ☐ Redis 캐시 (성능 최적화, 후순위)
 Phase 5  청약 + 언더라이팅                                            ☐
