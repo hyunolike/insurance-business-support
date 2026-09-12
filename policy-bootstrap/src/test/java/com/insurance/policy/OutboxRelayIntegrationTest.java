@@ -34,6 +34,9 @@ import org.springframework.test.context.TestPropertySource;
 @Import(OutboxRelayIntegrationTest.RecordingPublisherConfig.class)
 @TestPropertySource(properties = {
         "policy.outbox.relay.enabled=true",
+        // Kafka 발행기 대신 아래 기록용 구현을 쓴다. kafka 로 두면
+        // KafkaTemplate 을 요구해 컨텍스트 로딩이 실패한다.
+        "policy.outbox.relay.publisher=recording",
         // 스케줄러가 배경에서 돌지 않게 한다. 검증은 relayOnce() 직접 호출로.
         "policy.outbox.relay.initial-delay=3600000",
         "policy.outbox.relay.max-attempts=3"

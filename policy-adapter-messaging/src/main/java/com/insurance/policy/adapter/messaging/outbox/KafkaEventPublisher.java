@@ -5,9 +5,7 @@ import java.time.Duration;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Component;
 
 /**
  * {@link EventPublisher}의 Kafka 구현.
@@ -19,11 +17,9 @@ import org.springframework.stereotype.Component;
  * <p>{@code acks=all}과 함께 써야 의미가 있다. 리더만 받고 응답하는 설정이면
  * 여기서 성공을 받아도 리더 장애 시 이벤트가 사라진다.
  *
- * <p>Kafka가 없는 환경(통합 테스트 등)에서는 빈이 만들어지지 않는다. 릴레이 로직 자체는
- * {@link EventPublisher} 포트를 바꿔 끼워 검증한다.
+ * <p>빈 등록은 {@link OutboxRelayConfig}가 한다. 릴레이가 꺼져 있으면 이 빈도 만들어지지
+ * 않는다 — 릴레이 외에는 쓰는 곳이 없기 때문이다.
  */
-@Component
-@ConditionalOnProperty(name = "policy.outbox.relay.publisher", havingValue = "kafka")
 public class KafkaEventPublisher implements EventPublisher {
 
     /** 브로커 확인 대기 한도. 넘기면 실패로 보고 재시도한다. */
