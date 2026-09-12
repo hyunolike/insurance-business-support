@@ -1,0 +1,17 @@
+// policy-adapter-web : REST (계약 스냅샷 API 포함)
+//
+// 스냅샷 API는 claims 전용 편의 API가 아니라 공표된 공용 계약(Open Host Service)이다.
+// 같은 (policyNo, asOf, knownAt)은 영원히 같은 응답을 줘야 한다.
+dependencies {
+    implementation project(':policy-application')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+jacocoTestCoverageVerification {
+    violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
+}

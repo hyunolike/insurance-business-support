@@ -10,7 +10,7 @@ Claude Code(claude.ai/code)가 이 저장소에서 작업할 때 참고하는 �
 - 짝 저장소: `hyunolike/insurance-claims-platform` (실손의료보험 청구 심사)
 - 스택: Java 21 LTS, Spring Boot 3.x, PostgreSQL 15, Kafka, Redis
 - 아키텍처: DDD + 헥사고날, Gradle 멀티모듈, **Bitemporal 이력**, Transactional Outbox
-- **현재 상태: 설계 완료, 구현 Phase 0 시작 전**
+- **현재 상태: Phase 0(골격) 완료. 다음은 Phase 1 — claims의 진행을 여는 열쇠**
 
 ## 작업 전 반드시 읽을 것
 
@@ -59,12 +59,16 @@ docker compose down -v
 
 # 빌드·테스트
 ./gradlew clean build
-./gradlew :policy-domain:test                          # 도메인 단위 (빠름)
-./gradlew test --tests '*BitemporalTest'               # 시점 재현성
+./gradlew :policy-domain:test                          # 도메인 단위 (빠름, Spring 없음)
+./gradlew :policy-domain:test --tests '*TemporalTest'  # 시점 재현성
 ./gradlew test --tests '*ArchitectureTest'             # 아키텍처 규칙
-./gradlew :policy-underwriting:test --tests '*GoldenCaseTest'
-./gradlew contractTest                                 # ★ claims와의 계약
 ./gradlew jacocoTestCoverageVerification
+
+# Phase 1부터
+./gradlew contractTest                                 # ★ claims와의 계약
+# Phase 5부터
+./gradlew :policy-underwriting:test --tests '*GoldenCaseTest'
+# Phase 6부터
 ./gradlew generateOpenApiDocs
 
 # 실행 (8081)
@@ -130,11 +134,34 @@ feat · fix · docs · refactor · test · chore
 ## 현재 구현 상태
 
 ```
-Phase 0  골격 (멀티모듈, ArchUnit, Testcontainers, CI, btree_gist)   ☐ 미착수
-Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열쇠        ☐
+Phase 0  골격 (멀티모듈, ArchUnit, Testcontainers, CI, btree_gist)   ☑ 완료
+Phase 1  계약 모델 + 스냅샷 API  ← ★ claims의 진행을 여는 열쇠        ☐  ← 다음
 Phase 5  청약 + 언더라이팅                                            ☐
 Phase 6  운영 강화 (감사, 관측성, 부하 테스트)                        ☐
 ```
+
+**Phase 0에서 실제로 만들어진 것**
+
+```
+policy-domain/          shared/  Temporal ★ · DomainEvent · EventId(ULID) · AggregateRoot
+                        shared/vo/  Money (원 단위 정수)
+policy-application/     port/out/  OutboxAppender
+policy-adapter-persistence/  outbox/  Entity · Repository · AppenderAdapter
+                             db/migration/V1__extensions.sql (btree_gist)
+                                          V2__baseline_infrastructure.sql
+policy-bootstrap/       PolicyApplication · SecurityConfig
+                        test/  ArchitectureTest · FlywayMigrationTest
+                               OutboxAppenderIntegrationTest · IntegrationTestBase
+나머지 모듈              package-info.java 로 책임만 문서화 (Phase 1·5에서 채움)
+```
+
+`Temporal` 이 이 저장소의 출발점이다. 두 시간축 판정이 순수 함수라
+DB 없이 시점 재현성을 검증할 수 있다 (`TemporalTest`). Phase 1의
+`Policy.snapshotAsOf(asOf, knownAt)` 가 이 위에 올라간다.
+
+`Money`·`EventId`·`AggregateRoot`·`DomainEvent` 는 claims-platform 과 의도적으로
+중복된다. 공유 라이브러리로 빼면 두 바운디드 컨텍스트가 컴파일 타임에 다시 묶인다.
+각 파일 상단에 그 이유를 적어 두었다.
 
 Phase 2~4는 claims 저장소 담당이다.
 **Phase 1 완료 시 claims 레포에 이슈를 생성해 Phase 2 시작을 알린다.**

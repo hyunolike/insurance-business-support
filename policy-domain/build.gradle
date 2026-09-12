@@ -1,0 +1,25 @@
+// ─────────────────────────────────────────────────────────────
+// policy-domain : 순수 자바 도메인
+//
+// 의존성이 없다. Spring도, JPA도, Jackson도 클래스패스에 존재하지 않는다.
+//
+// 이 모듈의 핵심은 Bitemporal 시점 조회다.
+// Policy.snapshotAsOf(asOf, knownAt)는 순수 함수라 DB 없이 테스트할 수 있다.
+// 시점 재현성이 이 시스템의 절대 요구사항이므로, 그 로직이
+// 프레임워크와 섞이지 않는 것이 중요하다.
+// ─────────────────────────────────────────────────────────────
+
+dependencies {
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'BUNDLE'
+            limit { counter = 'BRANCH'; minimum = 0.85 }
+            limit { counter = 'LINE'; minimum = 0.90 }
+        }
+    }
+}

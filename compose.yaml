@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 로컬 개발 인프라 — business-support
+#
+# 포트가 claims-platform 과 겹치지 않게 잡혀 있다 (DB 5433, Redis 6380).
+# 두 서비스를 동시에 띄워 레포 간 E2E를 돌려야 하기 때문이다.
+#
+# Kafka는 공유한다. 두 서비스가 실제로 이벤트를 주고받아야 하므로
+# claims-platform 의 compose가 띄운 브로커(localhost:9092)에 붙는다.
+#   1) claims-platform: docker compose up -d   (kafka 포함)
+#   2) business-support: docker compose up -d  (postgres, redis만)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: business-support
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: policy-postgres
+    environment:
+      POSTGRES_DB: policy
+      POSTGRES_USER: policy
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-localdev}
+    ports:
+      - "5433:5432"
+    volumes:
+      - policy-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U policy -d policy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: policy-redis
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - policy-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  policy-postgres-data:
+  policy-redis-data:

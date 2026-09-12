@@ -1,0 +1,100 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# business-support 설정
+#
+# 비밀값에는 기본값을 주지 않는다. 미설정 시 기동이 실패하는 것이 정상 동작이다.
+#
+# 포트가 claims-platform 과 다르다 (앱 8081, DB 5433, Redis 6380).
+# 두 서비스를 동시에 띄워 레포 간 E2E를 돌려야 하기 때문이다. Kafka는 공유한다.
+#
+# 로컬 개발값은 .env.example 참고.
+# ─────────────────────────────────────────────────────────────────────────────
+
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: business-support
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/policy}
+    username: ${DB_USERNAME:policy}
+    password: ${DB_PASSWORD}              # 기본값 없음 → 미설정 시 기동 실패
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate                  # 스키마는 Flyway가 만든다
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: Asia/Seoul
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:business-support}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+policy:
+  encryption:
+    key: ${POLICY_ENCRYPTION_KEY}         # 기본값 없음
+    key-version: ${POLICY_ENCRYPTION_KEY_VERSION:v1}
+
+  underwriting:
+    ruleset-version: ${UW_RULESET_VERSION:2026.01}
+    # 부담보를 이 개수 넘게 붙이면 자동 인수하지 않고 회부한다 (U-CND-080).
+    # "인수는 했지만 쓸모없는 계약"은 불완전판매 리스크다.
+    max-auto-exclusions: ${UW_MAX_AUTO_EXCLUSIONS:2}
+
+  snapshot:
+    # 확정된 과거 스냅샷은 변하지 않는다 — Bitemporal 모델의 부수적 이득이다.
+    # policy.corrected 발생이 유일한 무효화 트리거다.
+    cache-past-ttl: ${SNAPSHOT_CACHE_PAST_TTL:P365D}
+    cache-current-ttl: ${SNAPSHOT_CACHE_CURRENT_TTL:PT5M}
+
+  premium:
+    grace-period: ${PREMIUM_GRACE_PERIOD:P2M}
+    demand-notice-period: ${DEMAND_NOTICE_PERIOD:P14D}
+
+  reinstatement:
+    window: ${REINSTATEMENT_WINDOW:P3Y}
+
+  outbox:
+    relay-batch-size: ${OUTBOX_RELAY_BATCH_SIZE:100}
+    relay-interval: ${OUTBOX_RELAY_INTERVAL:PT0.5S}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: business-support
+
+logging:
+  level:
+    root: INFO
+    com.insurance.policy: ${LOG_LEVEL:INFO}

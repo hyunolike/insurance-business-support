@@ -1,0 +1,15 @@
+// policy-adapter-messaging : Kafka, Outbox 릴레이 (Phase 1)
+dependencies {
+    implementation project(':policy-application')
+    implementation project(':policy-adapter-persistence')
+
+    implementation 'org.springframework.kafka:spring-kafka'
+    implementation 'org.springframework.boot:spring-boot-starter-json'
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+jacocoTestCoverageVerification {
+    violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
+}

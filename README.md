@@ -2,7 +2,7 @@
 
 > 과거 어느 시점의 계약이든 **그때 그대로 재현**하는, 계약 정보의 원천(Source of Truth)
 
-[![Phase](https://img.shields.io/badge/phase-설계%20완료-blue)]()
+[![Phase](https://img.shields.io/badge/phase-0%20골격%20완료-brightgreen)]()
 [![Java](https://img.shields.io/badge/Java-21%20LTS-orange)]()
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue)]()
@@ -196,14 +196,15 @@ policy-bootstrap/            ← Spring Boot 앱
 
 ## 시작하기
 
-> ⚠️ 현재 **설계 단계**다. 구현은 [로드맵](docs/design/08-roadmap.md) Phase 0부터 시작한다.
+> **Phase 0(골격) 완료.** 멀티모듈 구조·`Temporal` 시점 판정·아키텍처 강제 장치·CI·Outbox 기반이 동작한다.
+> 계약 모델과 스냅샷 API는 [로드맵](docs/design/08-roadmap.md) Phase 1에서 들어간다.
 
 ### 요구사항
 
 - Java 21
 - Docker & Docker Compose
 
-### 실행 (구현 후)
+### 실행
 
 ```bash
 cp .env.example .env      # 비밀값 설정 (미설정 시 기동 실패)
@@ -218,12 +219,16 @@ docker compose up -d      # PostgreSQL(5433), Redis(6380), Kafka(9092 공유)
 ### 검증
 
 ```bash
-./gradlew build                                   # 전체 빌드 + 테스트
-./gradlew test --tests '*ArchitectureTest'        # 아키텍처 규칙
-./gradlew test --tests '*BitemporalTest'          # 시점 재현성
-./gradlew contractTest                            # claims가 정의한 계약
-./gradlew jacocoTestCoverageVerification          # 커버리지 게이트
+./gradlew build                                        # 전체 빌드 + 테스트
+./gradlew test --tests '*ArchitectureTest'             # 아키텍처 규칙
+./gradlew :policy-domain:test --tests '*TemporalTest'  # ★ 시점 재현성
+./gradlew jacocoTestCoverageVerification               # 커버리지 게이트
 ```
+
+통합 테스트(Flyway, `EXCLUDE USING gist` 제약, Outbox 트랜잭션 원자성)는 Testcontainers로 돈다.
+**Docker가 없으면 실패가 아니라 skip** 되므로 로컬에 Docker 없이도 빌드는 통과한다.
+
+claims와의 계약 테스트(`./gradlew contractTest`)는 스냅샷 API가 생기는 Phase 1부터 돈다.
 
 ---
 
@@ -252,10 +257,10 @@ feat · fix · docs · refactor · test · chore
 ```
 □ ./gradlew build 통과
 □ ArchUnit 규칙 통과
-□ Bitemporal 불변식 테스트 통과
-□ contractTest 통과 (claims와의 계약)
-□ 커버리지 게이트 통과 (도메인/언더라이팅 브랜치 85%, 전체 라인 75%)
-□ OpenAPI drift 없음 (API 변경 시)
+□ 시점 재현성 테스트 통과 (TemporalTest)
+□ contractTest 통과 (Phase 1부터 — claims와의 계약)
+□ 커버리지 게이트 통과 (도메인 브랜치 85% / 라인 90%)
+□ OpenAPI drift 없음 (Phase 6부터, API 변경 시)
 □ 해당 Phase의 완료 조건 충족
 ```
 

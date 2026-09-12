@@ -1,0 +1,12 @@
+// policy-adapter-external : 건강진단·적부조사·신용정보 조회 (스텁, Phase 5)
+dependencies {
+    implementation project(':policy-application')
+    implementation 'org.springframework.boot:spring-boot-starter'
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+jacocoTestCoverageVerification {
+    violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
+}

@@ -1,0 +1,21 @@
+// policy-adapter-persistence : JPA · Flyway · Bitemporal 저장소
+//
+// PostgreSQL 의존도가 높다. EXCLUDE USING gist(기간 겹침 방지)와
+// 이력 불변 트리거는 이식할 수 없는 기능이다.
+// 이식성보다 데이터 정확성을 택한 의도적 결정이다 —
+// 계약 이력의 모순은 시점 재현성을 무너뜨리고, 그러면 이 시스템의 존재 이유가 사라진다.
+dependencies {
+    implementation project(':policy-application')
+
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation libs.flyway.core
+    runtimeOnly libs.flyway.postgresql
+    runtimeOnly libs.postgresql
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+jacocoTestCoverageVerification {
+    violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
+}

@@ -1,0 +1,32 @@
+// policy-bootstrap : Spring Boot 애플리케이션
+// 모든 모듈이 모이므로 아키텍처 검증과 통합 테스트가 여기서 돈다.
+plugins {
+    alias(libs.plugins.spring.boot)
+}
+
+dependencies {
+    implementation project(':policy-domain')
+    implementation project(':policy-application')
+    implementation project(':policy-underwriting')
+    implementation project(':policy-adapter-web')
+    implementation project(':policy-adapter-persistence')
+    implementation project(':policy-adapter-messaging')
+    implementation project(':policy-adapter-external')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation libs.archunit.junit5
+    testImplementation libs.testcontainers.junit
+    testImplementation libs.testcontainers.postgresql
+}
+
+jacocoTestCoverageVerification {
+    violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
+}

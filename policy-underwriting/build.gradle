@@ -1,0 +1,12 @@
+// policy-underwriting : 언더라이팅 룰 엔진 (Phase 5)
+// 도메인만 의존한다. 룰은 순수 함수여야 한다.
+dependencies {
+    api project(':policy-domain')
+
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+
+jacocoTestCoverageVerification {
+    violationRules { rule { element = 'BUNDLE'; limit { counter = 'LINE'; minimum = 0.00 } } }
+}

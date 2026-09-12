@@ -1,0 +1,81 @@
+plugins {
+    alias(libs.plugins.spring.boot) apply false
+    alias(libs.plugins.spring.dependency.management) apply false
+}
+
+allprojects {
+    group = 'com.insurance.policy'
+    version = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    // java-library : 모듈이 무엇을 전이 노출(api)하고 무엇을 감추는지(implementation)
+    // 명시할 수 있게 한다. 경계를 드러내는 것이 이 프로젝트에서는 중요하다.
+    apply plugin: 'java-library'
+    apply plugin: 'jacoco'
+    apply plugin: 'io.spring.dependency-management'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    // Spring BOM은 버전 정렬을 위해 모든 모듈에 적용한다.
+    // 단, 실제 Spring 라이브러리 의존은 모듈별 build.gradle이 결정한다.
+    // policy-domain / policy-underwriting 은 어떤 Spring 아티팩트도 선언하지 않으므로
+    // 컴파일 클래스패스에 Spring이 존재하지 않는다.
+    dependencyManagement {
+        imports {
+            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+        }
+    }
+
+    dependencies {
+        testImplementation libs.junit.jupiter
+        testImplementation libs.assertj
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    tasks.named('test') {
+        useJUnitPlatform()
+        testLogging {
+            events 'failed'
+            exceptionFormat 'full'
+        }
+        finalizedBy jacocoTestReport
+    }
+
+    jacoco {
+        toolVersion = libs.versions.jacoco.get()
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        reports {
+            xml.required = true
+            html.required = true
+        }
+    }
+
+    // 커버리지 게이트.
+    // 계층별 임계값은 모듈 build.gradle에서 덮어쓴다 (domain/rules 가 가장 높다).
+    // Phase가 진행되며 상향한다 — docs/design/07-architecture.md §5.3
+    jacocoTestCoverageVerification {
+        dependsOn test
+        violationRules {
+            rule {
+                element = 'BUNDLE'
+                limit { counter = 'LINE'; minimum = 0.00 }
+            }
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn jacocoTestCoverageVerification
+    }
+}

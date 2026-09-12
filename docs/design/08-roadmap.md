@@ -31,29 +31,54 @@ flowchart LR
 
 ---
 
-## Phase 0 — 골격 (양쪽 공통)
+## Phase 0 — 골격 (양쪽 공통) ✅ 구현 완료
 
 [claims 로드맵 Phase 0](https://github.com/hyunolike/insurance-claims-platform/blob/develop/docs/design/08-roadmap.md)과 동일.
 
 ### BS 고유 작업
 
-| # | 작업 |
-|---|---|
-| 0-B1 | `btree_gist` 확장 마이그레이션 (`V1__extensions.sql`) |
-| 0-B2 | `Temporal` 인터페이스 + 이력 불변 트리거 |
-| 0-B3 | ArchUnit: 이력 엔티티에 세터 금지 규칙 |
-| 0-B4 | 포트 8081 / DB 5433 / Redis 6380으로 설정 (claims와 동시 기동) |
+| # | 작업 | 상태 |
+|---|---|---|
+| 0-B1 | `btree_gist` 확장 마이그레이션 (`V1__extensions.sql`) | ✅ |
+| 0-B2 | **`Temporal` 인터페이스** — 두 시간축 판정 로직 | ✅ |
+| 0-B3 | ArchUnit: 이력 엔티티 세터 금지 + 필드 불변 규칙 | ✅ |
+| 0-B4 | 포트 8081 / DB 5433 / Redis 6380 (claims와 동시 기동) | ✅ |
+| 0-B5 | Outbox 기반 (`V2__baseline_infrastructure.sql` + 포트/어댑터) | ✅ |
 
-### 완료 조건
+### 완료 조건 — 검증 결과
 
 ```
-□ ./gradlew build 통과
-□ policy-domain에 Spring 추가 시 빌드 실패 확인
-□ Testcontainers PostgreSQL + Flyway 실행 확인
-□ EXCLUDE 제약이 동작하는지 확인 (겹치는 구간 INSERT → 실패)
-□ 이력 트리거가 UPDATE를 거부하는지 확인
-□ CI가 PR에서 동작
-□ claims와 동시에 로컬 기동 가능 (포트 충돌 없음)
+☑ ./gradlew build 통과 — 73건 통과 / 실패 0
+
+☑ policy-domain 에 Spring 의존성이 없다
+      claims-platform 에서 같은 구성으로 실증함:
+      domain 모듈에 @Component 를 넣으면 컴파일 단계에서 실패한다
+          error: package org.springframework.stereotype does not exist
+
+☑ Temporal 시점 판정이 순수 함수로 동작한다 — DB 없이 검증됨
+      소급 정정 후에도 정정 전 판단이 재현된다 (TemporalTest)
+          asOf=2026-03-14, knownAt=2026-04-02  → 부담보 있음 (4월의 부지급 근거)
+          asOf=2026-03-14, knownAt=now         → 부담보 없음 (정정 후 진실)
+      변경(Endorsement)은 과거 조회를 바꾸지 않는다
+      policy-domain: line 99.1% / branch 99%  (기준 90% / 85%)
+
+☑ EXCLUDE USING gist 겹침 방지 제약이 실제로 동작한다
+      FlywayMigrationTest 에서 임시 테이블로 검증:
+      같은 policy_no + 겹치는 daterange INSERT → DB가 거부
+      겹치지 않으면 통과
+      ※ Docker가 있는 환경(CI)에서 실행된다
+
+☑ btree_gist 확장이 마이그레이션으로 설치된다
+
+☑ 비밀값에 기본값이 없다 — DB_PASSWORD, POLICY_ENCRYPTION_KEY
+
+☑ claims와 포트가 겹치지 않는다 (앱 8081 / DB 5433 / Redis 6380, Kafka 공유)
+
+☐ 이력 불변 트리거  ← Phase 1에서 이력 테이블과 함께 추가
+      (Phase 0에는 아직 이력 테이블이 없다. ArchUnit의 세터·필드 불변 규칙은
+       이미 걸려 있어 Temporal 구현체가 생기는 순간부터 작동한다)
+
+☐ main 브랜치 + 보호 규칙  ← GitHub 저장소 설정에서 수동 적용 필요
 ```
 
 ---

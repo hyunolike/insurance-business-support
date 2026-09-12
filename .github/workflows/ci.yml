@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+# 같은 브랜치에 연속 푸시되면 이전 실행을 취소한다
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build & Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # ── 전체 빌드 ────────────────────────────────────────────────────
+      # Testcontainers가 여기서 실제로 실행된다.
+      # GitHub Actions 러너에는 Docker가 있으므로 통합 테스트가 skip되지 않는다.
+      - name: Build & Test
+        env:
+          # 비밀값은 기본값이 없다. 없으면 기동이 실패하는 것이 정상 동작이다.
+          DB_PASSWORD: ci-only-not-a-secret
+          POLICY_ENCRYPTION_KEY: ci-only-not-a-secret
+        run: ./gradlew build --no-daemon
+
+      # ── 아키텍처 규칙 ────────────────────────────────────────────────
+      # 도메인이 Spring을 참조, application이 ApplicationEventPublisher를 직접 사용,
+      # 의존 방향 역전, 그리고 이 저장소 고유 규칙인 '이력 엔티티 불변성'을 검사한다.
+      - name: Architecture rules
+        run: ./gradlew :policy-bootstrap:test --tests '*ArchitectureTest' --no-daemon
+
+      # ── 커버리지 게이트 ──────────────────────────────────────────────
+      # 도메인 브랜치 85% / 라인 90%. 시점 판정 로직은 분기가 곧 규칙이다.
+      - name: Coverage gate
+        run: ./gradlew jacocoTestCoverageVerification --no-daemon
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/
+            **/build/reports/jacoco/
+          retention-days: 7
+
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 비밀값은 환경변수로만. application.yml에 평문을 두지 않는다.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

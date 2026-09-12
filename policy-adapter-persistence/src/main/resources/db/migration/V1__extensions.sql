@@ -1,0 +1,22 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- V1. PostgreSQL 확장
+--
+-- btree_gist 는 Bitemporal 이력의 기간 겹침 방지에 필수다.
+--
+--   ALTER TABLE coverage_version ADD CONSTRAINT coverage_no_overlap
+--   EXCLUDE USING gist (
+--       policy_no     WITH =,
+--       coverage_code WITH =,
+--       daterange(valid_from, valid_to) WITH &&
+--   ) WHERE (superseded_at IS NULL);
+--
+-- 등호 비교(=)와 범위 겹침(&&)을 한 제약 안에서 쓰려면 이 확장이 있어야 한다.
+-- 이 제약이 있으면 애플리케이션 로직이 틀려도 모순된 이력이 저장되지 않는다.
+--
+-- 이식성을 포기하고 정확성을 택한 지점이다. 계약 이력의 모순은 시점 재현성을
+-- 무너뜨리고, 그러면 claims의 심사 근거가 사라진다.
+--
+-- docs/design/06-data-model.md §9
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE EXTENSION IF NOT EXISTS btree_gist;

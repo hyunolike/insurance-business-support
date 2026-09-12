@@ -1,0 +1,11 @@
+rootProject.name = 'insurance-business-support'
+
+// 의존 방향: adapter → application → domain ← underwriting
+include 'policy-domain'
+include 'policy-application'
+include 'policy-underwriting'
+include 'policy-adapter-web'
+include 'policy-adapter-persistence'
+include 'policy-adapter-messaging'
+include 'policy-adapter-external'
+include 'policy-bootstrap'
