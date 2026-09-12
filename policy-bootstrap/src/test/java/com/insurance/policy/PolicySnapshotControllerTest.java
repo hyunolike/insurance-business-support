@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.insurance.policy.adapter.web.snapshot.CachedSnapshotRenderer;
 import com.insurance.policy.adapter.web.snapshot.CanonicalJson;
 import com.insurance.policy.adapter.web.snapshot.PolicySnapshotController;
 import com.insurance.policy.application.policy.PolicySnapshotService;
@@ -48,7 +49,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
  * DB 왕복은 {@code PolicyBitemporalIntegrationTest}가 본다.
  */
 @WebMvcTest(controllers = PolicySnapshotController.class)
-@Import({SecurityConfig.class, TimeConfig.class, CanonicalJson.class})
+@Import({SecurityConfig.class, TimeConfig.class, CanonicalJson.class,
+        CachedSnapshotRenderer.class})
 @DisplayName("계약 스냅샷 API")
 class PolicySnapshotControllerTest {
 

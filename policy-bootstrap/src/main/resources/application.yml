@@ -77,10 +77,14 @@ policy:
     max-auto-exclusions: ${UW_MAX_AUTO_EXCLUSIONS:2}
 
   snapshot:
-    # 확정된 과거 스냅샷은 변하지 않는다 — Bitemporal 모델의 부수적 이득이다.
-    # policy.corrected 발생이 유일한 무효화 트리거다.
-    cache-past-ttl: ${SNAPSHOT_CACHE_PAST_TTL:P365D}
-    cache-current-ttl: ${SNAPSHOT_CACHE_CURRENT_TTL:PT5M}
+    cache:
+      # ★ knownAt 이 명시된 과거 조회만 캐시한다. 두 시간축이 모두 고정되면
+      #   이력이 append-only 라 답이 영원히 같다 — 무효화가 필요 없다.
+      #   knownAt 없는 "지금" 조회는 캐시하지 않는다. 정정이 나면 답이 바뀌고,
+      #   그 순간 claims 가 틀린 근거로 심사한다.
+      enabled: ${SNAPSHOT_CACHE_ENABLED:true}
+      # 불변값이므로 TTL 은 정확성 장치가 아니라 메모리 회수 장치다.
+      ttl: ${SNAPSHOT_CACHE_TTL:P30D}
 
   premium:
     grace-period: ${PREMIUM_GRACE_PERIOD:P2M}

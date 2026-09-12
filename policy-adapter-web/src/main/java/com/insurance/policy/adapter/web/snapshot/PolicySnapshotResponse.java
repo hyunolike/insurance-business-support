@@ -47,6 +47,12 @@ public record PolicySnapshotResponse(
         String checksum
 ) {
 
+    /** 캐시 역직렬화 전용 매퍼. 전역 설정 변화에 영향받지 않도록 분리한다. */
+    private static final com.fasterxml.jackson.databind.ObjectMapper CACHE_READER =
+            com.fasterxml.jackson.databind.json.JsonMapper.builder()
+                    .addModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+                    .build();
+
     public static PolicySnapshotResponse from(PolicySnapshot snapshot) {
         return new PolicySnapshotResponse(
                 snapshot.policyNo().value(),
@@ -68,6 +74,22 @@ public record PolicySnapshotResponse(
                         snapshot.benefitYear().from(),
                         snapshot.benefitYear().to()),
                 null);   // 체크섬은 본문 확정 후 계산해 채운다
+    }
+
+    /**
+     * 캐시에서 꺼낸 JSON을 그대로 돌려보낸다.
+     *
+     * <p>역직렬화 후 다시 렌더하지 않는다. 다시 렌더하면 그 사이 Jackson 설정이
+     * 바뀌었을 때 같은 질의가 다른 체크섬을 내고, claims가 저장해둔 스냅샷의
+     * 무결성 검증이 깨진다. <b>저장된 바이트가 곧 응답이다.</b>
+     */
+    public static PolicySnapshotResponse fromCachedJson(String json) {
+        try {
+            return CACHE_READER.readValue(json, PolicySnapshotResponse.class);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException(
+                    "캐시된 스냅샷을 읽을 수 없습니다. 캐시가 손상되었거나 스키마가 바뀌었습니다.", e);
+        }
     }
 
     /** 체크섬을 채운 복사본. 계산은 본문(체크섬 제외)의 정규화 JSON으로 한다. */

@@ -1,9 +1,7 @@
 package com.insurance.policy.adapter.web.snapshot;
 
-import com.insurance.policy.application.policy.PolicySnapshotService;
 import com.insurance.policy.domain.policy.InsuredRef;
 import com.insurance.policy.domain.policy.PolicyNo;
-import com.insurance.policy.domain.policy.SnapshotChecksum;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -29,13 +27,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/policies")
 public class PolicySnapshotController {
 
-    private final PolicySnapshotService snapshotService;
-    private final CanonicalJson canonicalJson;
+    private final CachedSnapshotRenderer renderer;
 
-    public PolicySnapshotController(PolicySnapshotService snapshotService,
-                                    CanonicalJson canonicalJson) {
-        this.snapshotService = snapshotService;
-        this.canonicalJson = canonicalJson;
+    public PolicySnapshotController(CachedSnapshotRenderer renderer) {
+        this.renderer = renderer;
     }
 
     /**
@@ -56,13 +51,9 @@ public class PolicySnapshotController {
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant knownAt) {
 
-        var snapshot = snapshotService.snapshot(
-                PolicyNo.of(policyNo), InsuredRef.of(insuredRef), asOf, knownAt);
-
-        // 본문을 먼저 확정한 뒤, 그 정규화 JSON으로 체크섬을 계산해 채운다.
-        PolicySnapshotResponse body = PolicySnapshotResponse.from(snapshot);
-        SnapshotChecksum checksum = SnapshotChecksum.of(canonicalJson.of(body));
-
-        return ResponseEntity.ok(body.withChecksum(checksum.value()));
+        // 렌더·체크섬·캐시는 CachedSnapshotRenderer 가 맡는다.
+        // knownAt 이 명시된 과거 조회만 캐시된다 — 그 답은 영원히 변하지 않기 때문이다.
+        return ResponseEntity.ok(renderer.render(
+                PolicyNo.of(policyNo), InsuredRef.of(insuredRef), asOf, knownAt));
     }
 }

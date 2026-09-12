@@ -37,6 +37,20 @@ public class CanonicalJson {
      * <p>인자로 받는 응답은 {@code checksum} 필드가 {@code null}이어야 한다 —
      * 체크섬을 체크섬 계산에 포함시킬 수는 없기 때문이다.
      */
+    /**
+     * 캐시 저장용 — <b>체크섬을 포함한</b> 완성 본문을 직렬화한다.
+     *
+     * <p>{@link #of}와 같은 매퍼를 쓴다. 캐시에서 꺼낸 바이트가 방금 렌더한 것과
+     * 같아야 하고, 전역 Jackson 설정이 바뀌어도 흔들리면 안 되기 때문이다.
+     */
+    public String serialize(PolicySnapshotResponse response) {
+        try {
+            return canonicalMapper.writeValueAsString(response);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("스냅샷 직렬화 실패", e);
+        }
+    }
+
     public String of(PolicySnapshotResponse response) {
         if (response.checksum() != null) {
             throw new IllegalArgumentException(
