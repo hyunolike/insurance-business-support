@@ -5,7 +5,9 @@ import com.insurance.policy.domain.shared.DomainEvent;
 import com.insurance.policy.domain.shared.EventId;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ★ 소급 정정 — "과거의 사실이 틀렸었다".
@@ -55,5 +57,28 @@ public record PolicyCorrected(
     @Override
     public String aggregateId() {
         return policyNo.value();
+    }
+
+    /**
+     * ★ claims가 재심사 대상을 고르는 데 필요한 것만 싣는다:
+     * <b>어느 구간이</b>({@code scopeValidFrom}~{@code scopeValidTo})
+     * <b>무엇이</b>({@code affectedElements}) 바뀌었는가.
+     *
+     * <p>정정 전후의 값 자체는 싣지 않는다. 부담보 정정이라면 그 값이 곧 KCD 범위이고,
+     * 그것은 건강정보다. claims는 스냅샷 API를 두 knownAt으로 두 번 불러 차이를 본다.
+     */
+    @Override
+    public Map<String, Object> payload() {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("policyNo", policyNo.value());
+        p.put("scopeValidFrom", scopeValidFrom.toString());
+        p.put("scopeValidTo", scopeValidTo == null ? null : scopeValidTo.toString());
+        p.put("affectedElements", List.copyOf(affectedElements));
+        p.put("previousSnapshotVersion", previousSnapshotVersion);
+        p.put("newSnapshotVersion", newSnapshotVersion);
+        p.put("reason", reason);
+        p.put("requestedBy", requestedBy);
+        p.put("approvedBy", approvedBy);
+        return p;
     }
 }

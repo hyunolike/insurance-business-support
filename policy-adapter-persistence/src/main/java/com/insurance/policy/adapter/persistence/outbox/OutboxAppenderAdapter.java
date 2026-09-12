@@ -57,8 +57,11 @@ public class OutboxAppenderAdapter implements OutboxAppender {
     /**
      * 이벤트 봉투를 만든다.
      *
-     * <p>민감정보(성명·계좌번호·KCD 코드)는 이벤트 구현체가 애초에 갖지 않는다.
-     * 여기서 걸러내는 것이 아니라 도메인에서 싣지 않는 것이 원칙이다.
+     * <p>페이로드는 {@link DomainEvent#payload()}가 손으로 만든 것을 그대로 쓴다.
+     * <b>이벤트 객체를 리플렉션으로 직렬화하지 않는다.</b> 그렇게 하면
+     * 이벤트에 필드를 하나 추가하는 것만으로 값이 Kafka로 나가고,
+     * 어댑터 코드는 바뀌지 않아 리뷰에서 걸리지 않는다.
+     * 무엇을 공표할지는 도메인이 명시적으로 결정한다.
      */
     private String serializeEnvelope(DomainEvent event) {
         Map<String, Object> envelope = new LinkedHashMap<>();
@@ -69,7 +72,7 @@ public class OutboxAppenderAdapter implements OutboxAppender {
         envelope.put("producer", PRODUCER);
         envelope.put("aggregateType", aggregateTypeOf(event));
         envelope.put("aggregateId", event.aggregateId());
-        envelope.put("payload", event);
+        envelope.put("payload", event.payload());
 
         try {
             return objectMapper.writeValueAsString(envelope);

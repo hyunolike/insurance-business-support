@@ -9,6 +9,7 @@ import com.insurance.policy.domain.shared.EventId;
 import com.insurance.policy.support.IntegrationTestBase;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -128,6 +129,11 @@ class OutboxAppenderIntegrationTest extends IntegrationTestBase {
         @Override
         public String eventType() {
             return "policy.corrected";
+        }
+
+        @Override
+        public Map<String, Object> payload() {
+            return Map.of("policyNo", aggregateId);
         }
     }
 }

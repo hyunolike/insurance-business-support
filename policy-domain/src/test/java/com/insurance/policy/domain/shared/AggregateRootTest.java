@@ -85,5 +85,10 @@ class AggregateRootTest {
         public String aggregateId() {
             return "TEST-1";
         }
+
+        @Override
+        public java.util.Map<String, Object> payload() {
+            return java.util.Map.of();
+        }
     }
 }

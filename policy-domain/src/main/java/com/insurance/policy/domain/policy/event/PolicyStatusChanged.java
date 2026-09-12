@@ -6,6 +6,8 @@ import com.insurance.policy.domain.shared.DomainEvent;
 import com.insurance.policy.domain.shared.EventId;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 계약 상태 변경 (실효·부활·해지·만기).
@@ -46,5 +48,21 @@ public record PolicyStatusChanged(
     @Override
     public String aggregateId() {
         return policyNo.value();
+    }
+
+    /**
+     * {@code eventType}이 전이별로 갈리지만 {@code fromStatus}/{@code toStatus}를 함께 싣는다.
+     * 토픽만 보고 분기한 소비자가 나중에 정확한 전이를 알아야 할 때 이벤트를 다시 읽지 않게 한다.
+     */
+    @Override
+    public Map<String, Object> payload() {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("policyNo", policyNo.value());
+        p.put("fromStatus", fromStatus.name());
+        p.put("toStatus", toStatus.name());
+        p.put("effectiveFrom", effectiveFrom.toString());
+        p.put("reason", reason);
+        p.put("actorRef", actorRef);
+        return p;
     }
 }

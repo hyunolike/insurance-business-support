@@ -9,7 +9,9 @@ import com.insurance.policy.domain.shared.DomainEvent;
 import com.insurance.policy.domain.shared.EventId;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 계약 성립.
@@ -49,5 +51,25 @@ public record PolicyIssued(
     @Override
     public String aggregateId() {
         return policyNo.value();
+    }
+
+    /**
+     * 부담보 상세(KCD 범위)는 담지 않는다 — {@code hasExclusions} 여부만 알린다.
+     * KCD 범위는 건강정보를 추론할 수 있으므로, 필요하면 claims가 스냅샷 API로 인가받아 가져간다.
+     */
+    @Override
+    public Map<String, Object> payload() {
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("policyNo", policyNo.value());
+        p.put("productCode", product.productCode());
+        p.put("productName", product.productName());
+        p.put("generation", product.generation().code());
+        p.put("insuredRef", insuredRef.value());
+        p.put("periodFrom", policyPeriod.from().toString());
+        p.put("periodTo", policyPeriod.to().toString());
+        p.put("effectiveDate", effectiveDate.toString());
+        p.put("coverageCodes", coverageCodes.stream().map(CoverageCode::value).toList());
+        p.put("hasExclusions", hasExclusions);
+        return p;
     }
 }
